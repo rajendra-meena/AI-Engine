@@ -1,0 +1,3 @@
+"""
+MarketMind AI — Indicator Engine
+"""
