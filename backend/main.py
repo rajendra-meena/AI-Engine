@@ -24,11 +24,13 @@ from api.market import router as market_router
 from api.prediction import router as prediction_router
 from api.health import router as health_router
 from api.replay import router as replay_router, set_replay_engine
+from api.candles import router as candle_router, set_candle_engine
 from api.ticks import router as tick_router, set_tick_engine
 from services.prediction_service import initialize as init_prediction_service
 from services.live_market_engine import LiveMarketDataEngine
 from websocket.gateway import WebSocketGateway
 from stream.router import StreamRouter
+from candles.engine import CandleEngine
 from tick.engine import TickEngine
 from core.event_bus import EventBus
 from utils.logger import log_info
@@ -41,12 +43,13 @@ websocket_gateway: WebSocketGateway | None = None
 replay_engine: "ReplayEngine | None" = None
 tick_engine: TickEngine | None = None
 stream_router: StreamRouter | None = None
+candle_engine: CandleEngine | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: startup + shutdown."""
-    global live_engine, websocket_gateway, replay_engine, tick_engine, stream_router
+    global live_engine, websocket_gateway, replay_engine, tick_engine, stream_router, candle_engine
 
     # ── Startup ──
     log_info("Application starting", title="MarketMind AI Backend")
@@ -66,6 +69,11 @@ async def lifespan(app: FastAPI):
     stream_router = StreamRouter(event_bus)
     await stream_router.start()
 
+    # Start the Candle Aggregation Engine
+    candle_engine = CandleEngine(stream_router, event_bus)
+    set_candle_engine(candle_engine)
+    await candle_engine.start()
+
     # Start the Live Market Data Engine
     live_engine = LiveMarketDataEngine(event_bus, market_service)
     await live_engine.start()
@@ -84,6 +92,8 @@ async def lifespan(app: FastAPI):
     # ── Shutdown ──
     if replay_engine:
         await replay_engine.stop()
+    if candle_engine:
+        await candle_engine.stop()
     await tick_engine.stop()
     if stream_router:
         await stream_router.stop()
@@ -118,6 +128,7 @@ app.include_router(market_router)
 app.include_router(prediction_router)
 app.include_router(health_router)
 app.include_router(replay_router)
+app.include_router(candle_router)
 app.include_router(tick_router)
 
 
