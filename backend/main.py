@@ -29,6 +29,7 @@ from api.indicators import router as indicator_router, set_indicator_engine
 from api.market_structure import router as structure_router, set_market_structure_engine
 from api.patterns import router as pattern_router, set_pattern_engine
 from api.multi_timeframe import router as mtf_router, set_mtf_engine
+from api.ai_decision import router as ai_router, set_ai_decision_engine
 from api.support_resistance import router as sr_router, set_sr_engine
 from api.trading_context import router as context_router, set_trading_context_engine
 from api.ticks import router as tick_router, set_tick_engine
@@ -42,6 +43,7 @@ from market_structure.engine import MarketStructureEngine
 from patterns.engine import PatternEngine
 from trading_context.engine import TradingContextEngine
 from support_resistance.engine import SREngine
+from ai_decision.engine import AIDecisionEngine
 from multi_timeframe.engine import MTFEngine
 from tick.engine import TickEngine
 from core.event_bus import EventBus
@@ -61,13 +63,14 @@ market_structure_engine: MarketStructureEngine | None = None
 pattern_engine: PatternEngine | None = None
 trading_context_engine: TradingContextEngine | None = None
 sr_engine: SREngine | None = None
+ai_decision_engine: AIDecisionEngine | None = None
 mtf_engine: MTFEngine | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: startup + shutdown."""
-    global live_engine, websocket_gateway, replay_engine, tick_engine, stream_router, candle_engine, indicator_engine, market_structure_engine, pattern_engine, trading_context_engine, sr_engine, mtf_engine
+    global live_engine, websocket_gateway, replay_engine, tick_engine, stream_router, candle_engine, indicator_engine, market_structure_engine, pattern_engine, trading_context_engine, sr_engine, ai_decision_engine, mtf_engine
 
     # ── Startup ──
     log_info("Application starting", title="MarketMind AI Backend")
@@ -117,6 +120,11 @@ async def lifespan(app: FastAPI):
     set_sr_engine(sr_engine)
     await sr_engine.start()
 
+    # Start the AI Decision Engine (capstone)
+    ai_decision_engine = AIDecisionEngine(event_bus)
+    set_ai_decision_engine(ai_decision_engine)
+    await ai_decision_engine.start()
+
     # Start the Multi-Timeframe Engine
     mtf_engine = MTFEngine(event_bus)
     set_mtf_engine(mtf_engine)
@@ -152,6 +160,8 @@ async def lifespan(app: FastAPI):
         await trading_context_engine.stop()
     if sr_engine:
         await sr_engine.stop()
+    if ai_decision_engine:
+        await ai_decision_engine.stop()
     if mtf_engine:
         await mtf_engine.stop()
     await tick_engine.stop()
@@ -194,6 +204,7 @@ app.include_router(structure_router)
 app.include_router(pattern_router)
 app.include_router(context_router)
 app.include_router(sr_router)
+app.include_router(ai_router)
 app.include_router(mtf_router)
 app.include_router(tick_router)
 
