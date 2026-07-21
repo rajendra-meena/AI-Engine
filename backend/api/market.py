@@ -113,6 +113,14 @@ async def engine_status():
     return engine.get_engine_metrics()
 
 
+@router.get("/api/websocket/status")
+async def websocket_status():
+    """Return WebSocket Gateway connection statistics."""
+    from main import get_websocket_gateway
+    gateway = get_websocket_gateway()
+    return await gateway.get_connection_stats()
+
+
 @router.get("/api/engine/symbols")
 async def engine_symbols():
     """Return per-symbol tracking status from the Live Engine."""
