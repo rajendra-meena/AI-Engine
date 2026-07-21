@@ -1,19 +1,19 @@
 """
 MarketMind AI — Backend Server Entry Point
 
-Assembles the FastAPI application from modular route files and
-initializes services on startup.
+Assembles the FastAPI application from modular route files, creates the
+global Event Bus, and initializes services on startup.
 
-Phase 2 architecture:
-  main.py           — app assembly, middleware, startup
-  api/market.py     — /api/data, /api/intraday, /api/cache/status
-  api/prediction.py — /api/predictions/* CRUD + backtesting
-  api/health.py     — /api/health
+Phase 4 architecture:
+  main.py           — app assembly, middleware, startup, Event Bus lifecycle
+  api/              — route handlers (market, prediction, health)
   services/         — business logic layer
   cache/            — CSV disk cache
-  core/config.py    — constants & settings
-  database.py       — SQLite layer (exists, imported by services)
+  core/             — configuration, enums, events, event_bus
+  database.py       — SQLite layer
 """
+
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,8 +22,34 @@ from api.market import router as market_router
 from api.prediction import router as prediction_router
 from api.health import router as health_router
 from services.prediction_service import initialize as init_prediction_service
+from core.event_bus import EventBus
+from utils.logger import log_info
 
-app = FastAPI(title="MarketMind AI Backend")
+# ── Global Event Bus instance ──
+
+event_bus = EventBus(max_queue_size=1000)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan: startup + shutdown."""
+    # ── Startup ──
+    log_info("Application starting", title="MarketMind AI Backend")
+    init_prediction_service()
+    await event_bus.start()
+
+    yield  # Application runs here
+
+    # ── Shutdown ──
+    await event_bus.stop()
+    stats = event_bus.get_stats()
+    log_info("Application stopped", **stats)
+
+
+app = FastAPI(
+    title="MarketMind AI Backend",
+    lifespan=lifespan,
+)
 
 app.add_middleware(
     CORSMiddleware,
@@ -39,10 +65,11 @@ app.include_router(prediction_router)
 app.include_router(health_router)
 
 
-@app.on_event("startup")
-async def startup():
-    """Initialize the SQLite database and check for stale prediction rows."""
-    init_prediction_service()
+# ── Expose event_bus for future modules to access ──
+
+def get_event_bus() -> EventBus:
+    """Return the global Event Bus instance. Used by future modules."""
+    return event_bus
 
 
 if __name__ == "__main__":
