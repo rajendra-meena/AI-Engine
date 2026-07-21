@@ -76,3 +76,10 @@ async def provider_status():
     """Return the active market data provider's health and capabilities."""
     service = _get_service()
     return await service.provider_status()
+
+
+@router.get("/api/cache/memory")
+async def memory_cache_status():
+    """Return in-memory cache statistics (hits, misses, hit ratio, entries)."""
+    service = _get_service()
+    return await service.get_memory_cache_stats()

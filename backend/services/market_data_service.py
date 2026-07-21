@@ -50,6 +50,13 @@ from cache.csv_cache import (
     load_intraday_csv,
     write_full_intraday_csv,
 )
+from cache.memory_cache import MemoryCache
+from cache.cache_keys import (
+    intraday_key,
+    daily_key,
+    reference_key,
+    provider_status_key,
+)
 from core.constants import (
     DAILY_LOOKBACK_DEFAULT_DAYS,
     DAILY_OVERLAP_DAYS,
@@ -57,6 +64,10 @@ from core.constants import (
     FAST_INTERVALS,
     INTRADAY_MAX_DAYS_FAST,
     INTRADAY_MAX_DAYS_DEFAULT,
+    MEMORY_CACHE_TTL_INTRADAY,
+    MEMORY_CACHE_TTL_DAILY,
+    MEMORY_CACHE_TTL_REFERENCE,
+    MEMORY_CACHE_TTL_PROVIDER_STATUS,
 )
 from core.intervals import interval_to_minutes, is_valid_interval
 from core.symbols import is_valid_symbol
@@ -79,6 +90,7 @@ class MarketDataService:
         self._factory = ProviderFactory()
         self._provider: BaseProvider | None = None
         self._max_retries = max_retries
+        self._cache = MemoryCache()
 
     # ── Provider management ──
 
@@ -94,11 +106,16 @@ class MarketDataService:
         return self._provider
 
     async def provider_status(self) -> dict[str, Any]:
-        """Return the current provider's health and capabilities."""
+        """Return the current provider's health and capabilities (memory cached)."""
+        cache_key = provider_status_key()
+        cached = await self._cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         provider = await self._get_provider()
         health = await provider.health()
         caps = provider.capabilities()
-        return {
+        result = {
             "provider": caps.provider_name,
             "type": caps.provider_type.value,
             "status": health.status.value,
@@ -107,6 +124,8 @@ class MarketDataService:
             "supported_symbols": caps.symbols,
             "supported_intervals": caps.intervals,
         }
+        await self._cache.set(cache_key, result, ttl_seconds=MEMORY_CACHE_TTL_PROVIDER_STATUS)
+        return result
 
     async def health(self) -> ProviderHealth:
         """Quick health check. Returns the provider's health status."""
@@ -152,21 +171,35 @@ class MarketDataService:
         end_date = end_date or date.today()
         start_date = start_date or (end_date - timedelta(days=DAILY_LOOKBACK_DEFAULT_DAYS))
 
+        # 1. Try memory cache first
+        cache_key = daily_key(symbol)
+        cached_result = await self._cache.get(cache_key)
+        if cached_result is not None:
+            # Filter cached full dataset to requested range
+            filtered = [
+                d for d in cached_result
+                if start_date <= date.fromisoformat(d["Date"]) <= end_date
+            ]
+            return {"symbol": symbol, "data": filtered}
+
         provider = await self._get_provider()
         ticker = await provider.get_provider_symbol(symbol)
         today = date.today()
 
-        # 1. Try CSV cache
+        # 2. Try CSV cache
         cached_records, cached_last_date_str, _ = load_daily_csv(ticker)
         cached_last_date = date.fromisoformat(cached_last_date_str) if cached_last_date_str else None
 
-        # 2. Check if cache is fresh
+        # 3. Check if CSV cache is fresh
         need_fetch = self._daily_cache_needs_refresh(cached_records, cached_last_date, start_date, end_date, today)
 
         if need_fetch:
             cached_records = await self._refresh_daily_cache(provider, symbol, ticker, cached_records, cached_last_date, start_date, end_date)
 
-        # 3. Filter to requested range
+        # 4. Store full dataset in memory cache
+        await self._cache.set(cache_key, cached_records, ttl_seconds=MEMORY_CACHE_TTL_DAILY)
+
+        # 5. Filter to requested range
         filtered = [
             d for d in cached_records
             if start_date <= date.fromisoformat(d["Date"]) <= end_date
@@ -196,32 +229,53 @@ class MarketDataService:
         if not valid_i:
             return {"symbol": symbol, "candles": [], "error": err_i}
 
+        # 1. Try memory cache first
+        cache_key = intraday_key(symbol, interval)
+        cached_result = await self._cache.get(cache_key)
+        if cached_result is not None:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+            result = [c for c in cached_result if datetime.fromisoformat(c["time"]) >= cutoff]
+            deduped = self._deduplicate_candles(result)
+
+            # Reference levels are cached separately
+            refs = await self._get_reference_levels_cached(symbol)
+
+            return {
+                "symbol": symbol,
+                "candles": deduped,
+                "dailyRefs": refs,
+                "cached": True,
+                "cache_size": len(deduped),
+            }
+
         provider = await self._get_provider()
         ticker = await provider.get_provider_symbol(symbol)
 
-        # 1. Load intraday cache
+        # 2. Load CSV cache
         cached_candles, latest_cached_time = load_intraday_csv(ticker, interval)
 
-        # 2. Check if cache needs refresh
+        # 3. Check if CSV cache needs refresh
         now_utc = datetime.now(timezone.utc)
         need_fetch = self._intraday_cache_needs_refresh(latest_cached_time, interval, now_utc)
 
         if need_fetch:
             cached_candles = await self._refresh_intraday_cache(provider, symbol, ticker, interval, cached_candles, days)
 
-        # 3. Trim to requested days
+        # 4. Store full dataset in memory cache
+        await self._cache.set(cache_key, cached_candles, ttl_seconds=MEMORY_CACHE_TTL_INTRADAY)
+
+        # 5. Trim to requested days
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         result = [c for c in cached_candles if datetime.fromisoformat(c["time"]) >= cutoff]
         deduped = self._deduplicate_candles(result)
 
-        # 4. Fetch daily reference levels
-        daily_refs = await self._fetch_daily_reference_levels(provider, symbol)
-        daily_refs_dict = daily_refs.to_dict() if daily_refs else None
+        # 6. Fetch daily reference levels (cached)
+        refs = await self._get_reference_levels_cached(symbol)
 
         return {
             "symbol": symbol,
             "candles": deduped,
-            "dailyRefs": daily_refs_dict,
+            "dailyRefs": refs,
             "cached": not need_fetch,
             "cache_size": len(deduped),
         }
@@ -229,15 +283,13 @@ class MarketDataService:
     # ── Reference levels ──
 
     async def get_reference_levels(self, symbol: str) -> dict[str, Any] | None:
-        """Fetch daily reference levels for a symbol."""
-        provider = await self._get_provider()
-        refs = await self._fetch_daily_reference_levels(provider, symbol)
-        return refs.to_dict() if refs else None
+        """Fetch daily reference levels for a symbol (memory cached)."""
+        return await self._get_reference_levels_cached(symbol)
 
     # ── Cache status ──
 
     async def get_cache_status(self, symbol: str) -> dict[str, Any]:
-        """Return cache metadata (last_updated, total_days)."""
+        """Return CSV cache metadata (last_updated, total_days)."""
         provider = await self._get_provider()
         ticker = await provider.get_provider_symbol(symbol)
         records, last_date, total = load_daily_csv(ticker)
@@ -246,6 +298,10 @@ class MarketDataService:
             "last_updated": last_date or "never",
             "total_days": total,
         }
+
+    async def get_memory_cache_stats(self) -> dict[str, Any]:
+        """Return in-memory cache performance statistics."""
+        return self._cache.get_stats()
 
     # ── Cache helpers ──
 
@@ -330,6 +386,20 @@ class MarketDataService:
             return await provider.fetch_daily_reference_levels(symbol)
         except Exception:
             return None
+
+    async def _get_reference_levels_cached(self, symbol: str) -> dict | None:
+        """Fetch reference levels with memory caching."""
+        ref_key = reference_key(symbol)
+        cached = await self._cache.get(ref_key)
+        if cached is not None:
+            return cached
+
+        provider = await self._get_provider()
+        refs = await self._fetch_daily_reference_levels(provider, symbol)
+        ref_dict = refs.to_dict() if refs else None
+        if ref_dict:
+            await self._cache.set(ref_key, ref_dict, ttl_seconds=MEMORY_CACHE_TTL_REFERENCE)
+        return ref_dict
 
     # ── Retry logic ──
 

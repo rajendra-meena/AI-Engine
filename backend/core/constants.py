@@ -18,6 +18,15 @@ DAILY_REFS_LOOKBACK_DAYS = 10           # Days of daily data for reference level
 DAILY_REFS_WEEKLY_WINDOW = 5            # Candles to compute weekly high/low
 DAILY_REFS_MIN_CANDLES = 2              # Minimum candles needed for ref levels
 
+# ── In-memory cache TTLs (seconds) ──
+
+MEMORY_CACHE_TTL_INTRADAY = 30           # Intraday candles: 30s
+MEMORY_CACHE_TTL_DAILY = 300             # Daily candles: 5 min
+MEMORY_CACHE_TTL_REFERENCE = 300         # Reference levels: 5 min
+MEMORY_CACHE_TTL_PROVIDER_STATUS = 60    # Provider health: 1 min
+MEMORY_CACHE_TTL_DEFAULT = 60            # Default for uncategorized items
+MEMORY_CACHE_MAX_ITEMS = 500             # Maximum cached entries
+
 # ── Cache flush timing ──
 
 CACHE_FLUSH_BUFFER_SEC = 30             # Buffer before considering a candle closed

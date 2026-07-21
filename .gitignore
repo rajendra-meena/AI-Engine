@@ -16,7 +16,7 @@ frontend/.vite/
 
 # Data caches
 backend/data_cache/
-backend/cache/
+backend/cache/*.json
 
 # Database
 backend/marketmind.db
