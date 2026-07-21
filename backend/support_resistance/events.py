@@ -1,0 +1,10 @@
+"""SR Engine events."""
+
+S_UPDATED = "sr_updated"
+S_RESISTANCE_UPDATED = "sr_resistance_updated"
+S_SUPPLY_ZONE_CREATED = "sr_supply_zone_created"
+S_DEMAND_ZONE_CREATED = "sr_demand_zone_created"
+S_BREAKOUT_DETECTED = "sr_breakout_detected"
+S_RETEST_DETECTED = "sr_retest_detected"
+S_FALSE_BREAKOUT = "sr_false_breakout"
+S_LEVEL_BROKEN = "sr_level_broken"
