@@ -1,0 +1,1 @@
+"""Individual pattern recognition modules"""

@@ -27,6 +27,7 @@ from api.replay import router as replay_router, set_replay_engine
 from api.candles import router as candle_router, set_candle_engine
 from api.indicators import router as indicator_router, set_indicator_engine
 from api.market_structure import router as structure_router, set_market_structure_engine
+from api.patterns import router as pattern_router, set_pattern_engine
 from api.ticks import router as tick_router, set_tick_engine
 from services.prediction_service import initialize as init_prediction_service
 from services.live_market_engine import LiveMarketDataEngine
@@ -35,6 +36,7 @@ from stream.router import StreamRouter
 from candles.engine import CandleEngine
 from indicators.engine import IndicatorEngine
 from market_structure.engine import MarketStructureEngine
+from patterns.engine import PatternEngine
 from tick.engine import TickEngine
 from core.event_bus import EventBus
 from utils.logger import log_info
@@ -50,12 +52,13 @@ stream_router: StreamRouter | None = None
 candle_engine: CandleEngine | None = None
 indicator_engine: IndicatorEngine | None = None
 market_structure_engine: MarketStructureEngine | None = None
+pattern_engine: PatternEngine | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: startup + shutdown."""
-    global live_engine, websocket_gateway, replay_engine, tick_engine, stream_router, candle_engine, indicator_engine, market_structure_engine
+    global live_engine, websocket_gateway, replay_engine, tick_engine, stream_router, candle_engine, indicator_engine, market_structure_engine, pattern_engine
 
     # ── Startup ──
     log_info("Application starting", title="MarketMind AI Backend")
@@ -90,6 +93,11 @@ async def lifespan(app: FastAPI):
     set_market_structure_engine(market_structure_engine)
     await market_structure_engine.start()
 
+    # Start the Pattern Recognition Engine
+    pattern_engine = PatternEngine(event_bus)
+    set_pattern_engine(pattern_engine)
+    await pattern_engine.start()
+
     # Start the Live Market Data Engine
     live_engine = LiveMarketDataEngine(event_bus, market_service)
     await live_engine.start()
@@ -114,6 +122,8 @@ async def lifespan(app: FastAPI):
         await indicator_engine.stop()
     if market_structure_engine:
         await market_structure_engine.stop()
+    if pattern_engine:
+        await pattern_engine.stop()
     await tick_engine.stop()
     if stream_router:
         await stream_router.stop()
@@ -151,6 +161,7 @@ app.include_router(replay_router)
 app.include_router(candle_router)
 app.include_router(indicator_router)
 app.include_router(structure_router)
+app.include_router(pattern_router)
 app.include_router(tick_router)
 
 
