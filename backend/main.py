@@ -24,9 +24,11 @@ from api.market import router as market_router
 from api.prediction import router as prediction_router
 from api.health import router as health_router
 from api.replay import router as replay_router, set_replay_engine
+from api.ticks import router as tick_router, set_tick_engine
 from services.prediction_service import initialize as init_prediction_service
 from services.live_market_engine import LiveMarketDataEngine
 from websocket.gateway import WebSocketGateway
+from tick.engine import TickEngine
 from core.event_bus import EventBus
 from utils.logger import log_info
 
@@ -36,21 +38,29 @@ event_bus = EventBus(max_queue_size=1000)
 live_engine: LiveMarketDataEngine | None = None
 websocket_gateway: WebSocketGateway | None = None
 replay_engine: "ReplayEngine | None" = None
+tick_engine: TickEngine | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: startup + shutdown."""
-    global live_engine, websocket_gateway, replay_engine
+    global live_engine, websocket_gateway, replay_engine, tick_engine
 
     # ── Startup ──
     log_info("Application starting", title="MarketMind AI Backend")
     init_prediction_service()
     await event_bus.start()
 
-    # Start the Live Market Data Engine
+    # Start the Market Data Service
     from services.market_data_service import MarketDataService
     market_service = MarketDataService()
+
+    # Start the Tick Engine
+    tick_engine = TickEngine(event_bus)
+    set_tick_engine(tick_engine)
+    await tick_engine.start()
+
+    # Start the Live Market Data Engine
     live_engine = LiveMarketDataEngine(event_bus, market_service)
     await live_engine.start()
 
@@ -68,6 +78,7 @@ async def lifespan(app: FastAPI):
     # ── Shutdown ──
     if replay_engine:
         await replay_engine.stop()
+    await tick_engine.stop()
 
     await websocket_gateway.stop()
     log_info("WebSocket gateway stopped")
@@ -99,6 +110,7 @@ app.include_router(market_router)
 app.include_router(prediction_router)
 app.include_router(health_router)
 app.include_router(replay_router)
+app.include_router(tick_router)
 
 
 # ── WebSocket endpoint ──
@@ -124,6 +136,12 @@ def get_live_engine() -> LiveMarketDataEngine:
     """Return the global Live Market Data Engine instance."""
     assert live_engine is not None, "Live engine not initialized"
     return live_engine
+
+
+def get_tick_engine() -> TickEngine:
+    """Return the global Tick Engine instance."""
+    assert tick_engine is not None, "Tick engine not initialized"
+    return tick_engine
 
 
 def get_replay_engine():
