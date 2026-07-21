@@ -7,7 +7,6 @@ import sqlite3
 import json
 import os
 import asyncio
-import yfinance as yf
 from datetime import datetime, timedelta, timezone
 
 from core.symbols import get_ticker, list_display_names
@@ -20,9 +19,22 @@ from core.constants import (
     BACKTEST_DAILY_INTERVAL,
     DEFAULT_API_LIMIT,
 )
+from data.provider_factory import ProviderFactory
+from data.base_provider import BaseProvider
 
 # Build a ticker → display-name map for backtesting lookups
 SYMBOL_MAP = {name: get_ticker(name) for name in list_display_names()}
+
+# Lazily initialised provider reference
+_provider: BaseProvider | None = None
+
+
+def _get_provider() -> BaseProvider:
+    global _provider
+    if _provider is None:
+        factory = ProviderFactory()
+        _provider = factory.get_default_provider()
+    return _provider
 
 
 def get_connection():
@@ -361,16 +373,16 @@ async def check_prediction_result(prediction):
         start_dt = datetime.strptime(predicted_date, "%Y-%m-%d")
         end_dt = start_dt + timedelta(days=BACKTEST_BUFFER_DAYS_INTRADAY)
 
+        provider = _get_provider()
+
         if _is_intraday_interval(pred_interval):
             # ── Intraday backtest: fetch intraday candles for the predicted day ──
-            df = await asyncio.to_thread(
-                yf.Ticker(ticker).history, start=start_dt, end=end_dt, interval=BACKTEST_INTRADAY_INTERVAL
+            rows = await provider.fetch_intraday_range(
+                prediction["symbol"], start_dt, end_dt, interval=BACKTEST_INTRADAY_INTERVAL
             )
 
-            if df.empty:
+            if not rows:
                 return Outcome.UNCHECKED.value, {"error": f"No intraday data available for {predicted_date}"}
-
-            df = df.reset_index()
 
             # Filter candles that fall on the predicted_date (IST day)
             actual_high = -float("inf")
@@ -380,8 +392,8 @@ async def check_prediction_result(prediction):
             last_close = None
             first_open = None
 
-            for _, row in df.iterrows():
-                date_val = row["Datetime"] if "Datetime" in df.columns else row.get("Date")
+            for row in rows:
+                date_val = row["Datetime"] if "Datetime" in row else row.get("Date")
                 if hasattr(date_val, "strftime"):
                     candle_date = date_val.strftime("%Y-%m-%d")
                 else:
@@ -408,19 +420,17 @@ async def check_prediction_result(prediction):
 
         else:
             # ── Daily backtest: fetch daily OHLC data ──
-            df = await asyncio.to_thread(
-                yf.Ticker(ticker).history, start=start_dt, end=end_dt, interval=BACKTEST_DAILY_INTERVAL
+            rows = await provider.fetch_daily_range(
+                prediction["symbol"], start_dt, end_dt
             )
 
-            if df.empty:
+            if not rows:
                 return Outcome.UNCHECKED.value, {"error": f"No data available for {predicted_date}"}
-
-            df = df.reset_index()
 
             # Find the candle that matches our predicted_date (or the next trading day)
             target_candle = None
-            for _, row in df.iterrows():
-                date_val = row["Date"] if "Date" in df.columns else row.get("Datetime")
+            for row in rows:
+                date_val = row["Date"]
                 if hasattr(date_val, "strftime"):
                     candle_date = date_val.strftime("%Y-%m-%d")
                 else:
@@ -430,7 +440,7 @@ async def check_prediction_result(prediction):
                     break
 
             if target_candle is None:
-                target_candle = df.iloc[0]
+                target_candle = rows[0]
 
             actual_high = float(target_candle["High"])
             actual_low = float(target_candle["Low"])
@@ -460,7 +470,7 @@ async def check_prediction_result(prediction):
 
             # If both hit, check intraday data to see which happened first
             if target_hit and stoploss_hit:
-                first_event = await _which_happened_first(ticker, predicted_date, stop_loss, target, bias)
+                first_event = await _which_happened_first(prediction["symbol"], predicted_date, stop_loss, target, bias)
                 if first_event == "target":
                     stoploss_hit = False  # target hit first
                 elif first_event == "stoploss":
@@ -474,7 +484,7 @@ async def check_prediction_result(prediction):
                 stoploss_hit = True
 
             if target_hit and stoploss_hit:
-                first_event = await _which_happened_first(ticker, predicted_date, stop_loss, target, bias)
+                first_event = await _which_happened_first(prediction["symbol"], predicted_date, stop_loss, target, bias)
                 if first_event == "target":
                     stoploss_hit = False
                 elif first_event == "stoploss":
@@ -496,7 +506,7 @@ async def check_prediction_result(prediction):
         return Outcome.UNCHECKED.value, {"error": str(e)}
 
 
-async def _which_happened_first(ticker, date_str, stop_loss, target, bias):
+async def _which_happened_first(symbol, date_str, stop_loss, target, bias):
     """
     Check intraday data to determine whether the target or stoploss was hit first.
     Returns 'target', 'stoploss', or 'unknown'.
@@ -505,15 +515,14 @@ async def _which_happened_first(ticker, date_str, stop_loss, target, bias):
         start_dt = datetime.strptime(date_str, "%Y-%m-%d")
         end_dt = start_dt + timedelta(days=BACKTEST_BUFFER_DAYS_INTRADAY)
 
-        df = await asyncio.to_thread(
-            yf.Ticker(ticker).history, start=start_dt, end=end_dt, interval=BACKTEST_INTRADAY_INTERVAL
+        provider = _get_provider()
+        rows = await provider.fetch_intraday_range(
+            symbol, start_dt, end_dt, interval=BACKTEST_INTRADAY_INTERVAL
         )
-        if df.empty:
+        if not rows:
             return "unknown"
 
-        df = df.reset_index()
-
-        for _, row in df.iterrows():
+        for row in rows:
             candle_high = float(row["High"])
             candle_low = float(row["Low"])
 
