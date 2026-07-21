@@ -63,3 +63,12 @@ AI_NO_TRADE = "ai_no_trade"            # AI rejected the setup
 MARKET_OPEN = "market_open"            # Market opened
 MARKET_CLOSE = "market_close"          # Market closed
 NEW_SESSION = "new_session"            # Market phase changed (e.g. Opening→Mid)
+
+# ── Live Data Engine Events ──
+
+MARKET_DATA_UPDATED = "market_data_updated"        # Market data was refreshed
+PROVIDER_HEALTH_CHANGED = "provider_health_changed"  # Provider health status changed
+CACHE_REFRESHED = "cache_refreshed"                # Cache was invalidated/refreshed
+DATA_FETCH_FAILED = "data_fetch_failed"            # A data fetch attempt failed
+ENGINE_STARTED = "engine_started"                  # Live engine started
+ENGINE_STOPPED = "engine_stopped"                  # Live engine stopped

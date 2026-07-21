@@ -83,3 +83,39 @@ async def memory_cache_status():
     """Return in-memory cache statistics (hits, misses, hit ratio, entries)."""
     service = _get_service()
     return await service.get_memory_cache_stats()
+
+
+@router.post("/api/engine/refresh")
+async def engine_refresh(
+    symbol: str = "NIFTY 50",
+    interval: str = "15m",
+    days: int = 3,
+):
+    """Trigger a live data refresh for a symbol via the engine."""
+    from main import get_live_engine
+    engine = get_live_engine()
+    return await engine.refresh_symbol(symbol, interval, days)
+
+
+@router.post("/api/engine/refresh-all")
+async def engine_refresh_all(interval: str = "15m", days: int = 3):
+    """Trigger a live data refresh for ALL tracked symbols."""
+    from main import get_live_engine
+    engine = get_live_engine()
+    return await engine.refresh_all(interval, days)
+
+
+@router.get("/api/engine/status")
+async def engine_status():
+    """Return the Live Market Data Engine status and metrics."""
+    from main import get_live_engine
+    engine = get_live_engine()
+    return engine.get_engine_metrics()
+
+
+@router.get("/api/engine/symbols")
+async def engine_symbols():
+    """Return per-symbol tracking status from the Live Engine."""
+    from main import get_live_engine
+    engine = get_live_engine()
+    return {"symbols": engine.get_all_symbol_status()}
