@@ -23,6 +23,7 @@ from fastapi import WebSocket
 from api.market import router as market_router
 from api.prediction import router as prediction_router
 from api.health import router as health_router
+from api.replay import router as replay_router, set_replay_engine
 from services.prediction_service import initialize as init_prediction_service
 from services.live_market_engine import LiveMarketDataEngine
 from websocket.gateway import WebSocketGateway
@@ -34,12 +35,13 @@ from utils.logger import log_info
 event_bus = EventBus(max_queue_size=1000)
 live_engine: LiveMarketDataEngine | None = None
 websocket_gateway: WebSocketGateway | None = None
+replay_engine: "ReplayEngine | None" = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: startup + shutdown."""
-    global live_engine, websocket_gateway
+    global live_engine, websocket_gateway, replay_engine
 
     # ── Startup ──
     log_info("Application starting", title="MarketMind AI Backend")
@@ -56,9 +58,17 @@ async def lifespan(app: FastAPI):
     websocket_gateway = WebSocketGateway(event_bus)
     await websocket_gateway.start()
 
+    # Create the Replay Engine
+    from replay.engine import ReplayEngine
+    replay_engine = ReplayEngine(market_service, event_bus)
+    set_replay_engine(replay_engine)
+
     yield  # Application runs here
 
     # ── Shutdown ──
+    if replay_engine:
+        await replay_engine.stop()
+
     await websocket_gateway.stop()
     log_info("WebSocket gateway stopped")
 
@@ -88,6 +98,7 @@ app.add_middleware(
 app.include_router(market_router)
 app.include_router(prediction_router)
 app.include_router(health_router)
+app.include_router(replay_router)
 
 
 # ── WebSocket endpoint ──
@@ -113,6 +124,12 @@ def get_live_engine() -> LiveMarketDataEngine:
     """Return the global Live Market Data Engine instance."""
     assert live_engine is not None, "Live engine not initialized"
     return live_engine
+
+
+def get_replay_engine():
+    """Return the global Replay Engine instance."""
+    assert replay_engine is not None, "Replay engine not initialized"
+    return replay_engine
 
 
 def get_websocket_gateway() -> WebSocketGateway:
