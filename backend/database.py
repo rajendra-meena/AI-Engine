@@ -10,13 +10,19 @@ import asyncio
 import yfinance as yf
 from datetime import datetime, timedelta, timezone
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "marketmind.db")
+from core.symbols import get_ticker, list_display_names
+from core.settings import DB_PATH
+from core.enums import Outcome
+from core.constants import (
+    BACKTEST_BUFFER_DAYS_INTRADAY,
+    BACKTEST_BUFFER_DAYS_DAILY,
+    BACKTEST_INTRADAY_INTERVAL,
+    BACKTEST_DAILY_INTERVAL,
+    DEFAULT_API_LIMIT,
+)
 
-SYMBOL_MAP = {
-    "NIFTY 50": "^NSEI",
-    "BANKNIFTY": "^NSEBANK",
-    "SENSEX": "^BSESN",
-}
+# Build a ticker → display-name map for backtesting lookups
+SYMBOL_MAP = {name: get_ticker(name) for name in list_display_names()}
 
 
 def get_connection():
@@ -277,7 +283,7 @@ def get_prediction_stats(symbol=None):
 
     # Status breakdown
     status_breakdown = {}
-    for s in ("HIT_TARGET", "HIT_STOPLOSS", "NO_TRADE", "UNCHECKED", "PENDING"):
+    for s in (Outcome.HIT_TARGET.value, Outcome.HIT_STOPLOSS.value, Outcome.NO_TRADE.value, Outcome.UNCHECKED.value, Outcome.PENDING.value):
         sw = f"status = '{s}'"
         full_where = f"{where} AND {sw}" if where else f"WHERE {sw}"
         count = conn.execute(f"SELECT COUNT(*) FROM predictions {full_where}", params).fetchone()[0]
@@ -336,7 +342,7 @@ async def check_prediction_result(prediction):
     """
     ticker = SYMBOL_MAP.get(prediction["symbol"])
     if not ticker:
-        return "UNCHECKED", {"error": f"Unknown symbol: {prediction['symbol']}"}
+        return Outcome.UNCHECKED.value, {"error": f"Unknown symbol: {prediction['symbol']}"}
 
     predicted_date = prediction["predicted_date"]
     pred_interval = prediction.get("interval", "15m")
@@ -346,23 +352,23 @@ async def check_prediction_result(prediction):
     target = prediction["target"]
 
     if not target and not stop_loss:
-        return "NO_TRADE", {"reason": "No target or stop loss defined"}
+        return Outcome.NO_TRADE.value, {"reason": "No target or stop loss defined"}
 
     if bias == "Wait":
-        return "NO_TRADE", {"reason": "Prediction bias was 'Wait'"}
+        return Outcome.NO_TRADE.value, {"reason": "Prediction bias was 'Wait'"}
 
     try:
         start_dt = datetime.strptime(predicted_date, "%Y-%m-%d")
-        end_dt = start_dt + timedelta(days=5)
+        end_dt = start_dt + timedelta(days=BACKTEST_BUFFER_DAYS_INTRADAY)
 
         if _is_intraday_interval(pred_interval):
-            # ── Intraday backtest: fetch 15m candles for the predicted day ──
+            # ── Intraday backtest: fetch intraday candles for the predicted day ──
             df = await asyncio.to_thread(
-                yf.Ticker(ticker).history, start=start_dt, end=end_dt, interval="15m"
+                yf.Ticker(ticker).history, start=start_dt, end=end_dt, interval=BACKTEST_INTRADAY_INTERVAL
             )
 
             if df.empty:
-                return "UNCHECKED", {"error": f"No intraday data available for {predicted_date}"}
+                return Outcome.UNCHECKED.value, {"error": f"No intraday data available for {predicted_date}"}
 
             df = df.reset_index()
 
@@ -396,18 +402,18 @@ async def check_prediction_result(prediction):
                         first_open = o
 
             if actual_high == -float("inf"):
-                return "UNCHECKED", {"error": f"No intraday candles found for {predicted_date}"}
+                return Outcome.UNCHECKED.value, {"error": f"No intraday candles found for {predicted_date}"}
 
             actual_close = last_close or actual_close
 
         else:
             # ── Daily backtest: fetch daily OHLC data ──
             df = await asyncio.to_thread(
-                yf.Ticker(ticker).history, start=start_dt, end=end_dt, interval="1d"
+                yf.Ticker(ticker).history, start=start_dt, end=end_dt, interval=BACKTEST_DAILY_INTERVAL
             )
 
             if df.empty:
-                return "UNCHECKED", {"error": f"No data available for {predicted_date}"}
+                return Outcome.UNCHECKED.value, {"error": f"No data available for {predicted_date}"}
 
             df = df.reset_index()
 
@@ -475,19 +481,19 @@ async def check_prediction_result(prediction):
                     target_hit = False
 
         if target_hit:
-            status = "HIT_TARGET"
+            status = Outcome.HIT_TARGET.value
             details["outcome"] = "Target was hit"
         elif stoploss_hit:
-            status = "HIT_STOPLOSS"
+            status = Outcome.HIT_STOPLOSS.value
             details["outcome"] = "Stop loss was hit"
         else:
-            status = "NO_TRADE"
+            status = Outcome.NO_TRADE.value
             details["outcome"] = f"Neither target ({target}) nor stop loss ({stop_loss}) was reached. Day range: {actual_low}-{actual_high}"
 
         return status, details
 
     except Exception as e:
-        return "UNCHECKED", {"error": str(e)}
+        return Outcome.UNCHECKED.value, {"error": str(e)}
 
 
 async def _which_happened_first(ticker, date_str, stop_loss, target, bias):
@@ -497,10 +503,10 @@ async def _which_happened_first(ticker, date_str, stop_loss, target, bias):
     """
     try:
         start_dt = datetime.strptime(date_str, "%Y-%m-%d")
-        end_dt = start_dt + timedelta(days=2)
+        end_dt = start_dt + timedelta(days=BACKTEST_BUFFER_DAYS_INTRADAY)
 
         df = await asyncio.to_thread(
-            yf.Ticker(ticker).history, start=start_dt, end=end_dt, interval="15m"
+            yf.Ticker(ticker).history, start=start_dt, end=end_dt, interval=BACKTEST_INTRADAY_INTERVAL
         )
         if df.empty:
             return "unknown"

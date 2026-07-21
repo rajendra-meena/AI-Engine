@@ -8,6 +8,7 @@ from datetime import date, timedelta
 
 from fastapi import APIRouter, Query
 
+from core.constants import DAILY_LOOKBACK_DEFAULT_DAYS
 from services.market_service import fetch_daily_data, fetch_intraday_data, get_cache_status
 
 router = APIRouter(tags=["market"])
@@ -22,7 +23,7 @@ async def get_data(
     """Fetch historical index data with dual-layer caching."""
     today = date.today()
     end_date = date.fromisoformat(end) if end else today
-    start_date = date.fromisoformat(start) if start else end_date - timedelta(days=365)
+    start_date = date.fromisoformat(start) if start else end_date - timedelta(days=DAILY_LOOKBACK_DEFAULT_DAYS)
 
     try:
         result = await fetch_daily_data(symbol, start_date, end_date)

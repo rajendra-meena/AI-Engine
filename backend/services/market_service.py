@@ -10,14 +10,19 @@ from datetime import date, datetime, timezone, timedelta
 
 import yfinance as yf
 
-from core.config import (
-    DAILY_LOOKBACK_DAYS,
+from core.constants import (
+    DAILY_LOOKBACK_DEFAULT_DAYS,
     DAILY_OVERLAP_DAYS,
     INTRADAY_MAX_DAYS_FAST,
     INTRADAY_MAX_DAYS_DEFAULT,
-    DAILY_REFS_PERIOD,
+    DAILY_REFS_LOOKBACK_DAYS,
+    DAILY_REFS_WEEKLY_WINDOW,
+    DAILY_REFS_MIN_CANDLES,
     CACHE_FLUSH_BUFFER_SEC,
+    FAST_INTERVALS,
+    BACKTEST_DAILY_INTERVAL,
 )
+from core.intervals import interval_to_minutes
 from cache.csv_cache import (
     load_daily_csv,
     write_full_daily_csv,
@@ -69,7 +74,7 @@ def _check_daily_cache_needs_refresh(cached_records, cached_last_date, start_dat
     if cached_last_date is None or cached_last_date < end_date:
         return True
 
-    fetch_start_needed = start_date - timedelta(days=DAILY_LOOKBACK_DAYS)
+    fetch_start_needed = start_date - timedelta(days=DAILY_LOOKBACK_DEFAULT_DAYS)
     earliest_cached = (
         date.fromisoformat(cached_records[0]["Date"]) if cached_records else today
     )
@@ -86,7 +91,7 @@ async def _refresh_daily_cache(ticker, cached_records, cached_last_date, start_d
     if cached_last_date and cached_last_date < end_date:
         fetch_start = cached_last_date - timedelta(days=DAILY_OVERLAP_DAYS)
     else:
-        fetch_start = start_date - timedelta(days=DAILY_LOOKBACK_DAYS)
+        fetch_start = start_date - timedelta(days=DAILY_LOOKBACK_DEFAULT_DAYS)
 
     log_info("Fetching daily data", ticker=ticker, start=str(fetch_start), end=str(end_date + timedelta(days=1)))
 
@@ -170,11 +175,12 @@ def _check_intraday_cache_needs_refresh(latest_cached_time, interval, now_utc):
         return True
 
     try:
-        interval_num = int(interval.replace("m", "").replace("h", ""))
-        is_minutes = "m" in interval
+        interval_mins = interval_to_minutes(interval)
+        if interval_mins <= 0:
+            return True
 
         latest_dt = datetime.fromisoformat(latest_cached_time)
-        delta = timedelta(minutes=interval_num if is_minutes else interval_num * 60)
+        delta = timedelta(minutes=interval_mins)
         next_candle_time = latest_dt + delta
 
         # Only fetch if the next candle should have already closed
@@ -188,7 +194,7 @@ def _check_intraday_cache_needs_refresh(latest_cached_time, interval, now_utc):
 
 async def _refresh_intraday_cache(ticker, interval, cached_candles, days):
     """Fetch missing intraday data from yfinance and merge with cache."""
-    max_days = INTRADAY_MAX_DAYS_FAST if interval in ("1m", "2m") else INTRADAY_MAX_DAYS_DEFAULT
+    max_days = INTRADAY_MAX_DAYS_FAST if interval in FAST_INTERVALS else INTRADAY_MAX_DAYS_DEFAULT
     period = f"{min(days, max_days)}d"
 
     log_info("Fetching intraday data", ticker=ticker, interval=interval, period=period)
@@ -230,7 +236,7 @@ async def _fetch_daily_reference_levels(ticker):
     """Fetch daily OHLC data for reference levels (prev day, weekly high/low)."""
     try:
         df_daily = await asyncio.to_thread(
-            yf.Ticker(ticker).history, period=DAILY_REFS_PERIOD, interval="1d"
+            yf.Ticker(ticker).history, period=f"{DAILY_REFS_LOOKBACK_DAYS}d", interval=BACKTEST_DAILY_INTERVAL
         )
         if df_daily.empty:
             return None
@@ -247,10 +253,10 @@ async def _fetch_daily_reference_levels(ticker):
                 "close": float(row["Close"]),
             })
 
-        if len(dailies) >= 2:
+        if len(dailies) >= DAILY_REFS_MIN_CANDLES:
             prev = dailies[-2]
-            weekly_high = max(d["high"] for d in dailies[-5:])
-            weekly_low = min(d["low"] for d in dailies[-5:])
+            weekly_high = max(d["high"] for d in dailies[-DAILY_REFS_WEEKLY_WINDOW:])
+            weekly_low = min(d["low"] for d in dailies[-DAILY_REFS_WEEKLY_WINDOW:])
             return {
                 "prevDayHigh": prev["high"],
                 "prevDayLow": prev["low"],
