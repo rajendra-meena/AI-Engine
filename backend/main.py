@@ -28,6 +28,7 @@ from api.ticks import router as tick_router, set_tick_engine
 from services.prediction_service import initialize as init_prediction_service
 from services.live_market_engine import LiveMarketDataEngine
 from websocket.gateway import WebSocketGateway
+from stream.router import StreamRouter
 from tick.engine import TickEngine
 from core.event_bus import EventBus
 from utils.logger import log_info
@@ -39,12 +40,13 @@ live_engine: LiveMarketDataEngine | None = None
 websocket_gateway: WebSocketGateway | None = None
 replay_engine: "ReplayEngine | None" = None
 tick_engine: TickEngine | None = None
+stream_router: StreamRouter | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: startup + shutdown."""
-    global live_engine, websocket_gateway, replay_engine, tick_engine
+    global live_engine, websocket_gateway, replay_engine, tick_engine, stream_router
 
     # ── Startup ──
     log_info("Application starting", title="MarketMind AI Backend")
@@ -59,6 +61,10 @@ async def lifespan(app: FastAPI):
     tick_engine = TickEngine(event_bus)
     set_tick_engine(tick_engine)
     await tick_engine.start()
+
+    # Start the Market Stream Router
+    stream_router = StreamRouter(event_bus)
+    await stream_router.start()
 
     # Start the Live Market Data Engine
     live_engine = LiveMarketDataEngine(event_bus, market_service)
@@ -79,6 +85,8 @@ async def lifespan(app: FastAPI):
     if replay_engine:
         await replay_engine.stop()
     await tick_engine.stop()
+    if stream_router:
+        await stream_router.stop()
 
     await websocket_gateway.stop()
     log_info("WebSocket gateway stopped")

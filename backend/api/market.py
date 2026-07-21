@@ -113,6 +113,24 @@ async def engine_status():
     return engine.get_engine_metrics()
 
 
+@router.get("/api/stream/status")
+async def stream_status():
+    """Return the Market Stream Router status and statistics."""
+    from main import stream_router
+    if stream_router is None:
+        return {"running": False}
+    return stream_router.get_stats()
+
+
+@router.get("/api/stream/consumers")
+async def stream_consumers():
+    """Return registered stream consumers."""
+    from main import stream_router
+    if stream_router is None:
+        return {"consumers": []}
+    return {"consumers": stream_router.list_consumers()}
+
+
 @router.get("/api/websocket/status")
 async def websocket_status():
     """Return WebSocket Gateway connection statistics."""
