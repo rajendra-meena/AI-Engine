@@ -1,6 +1,16 @@
 /**
  * Institutional Intraday Trading Engine
  *
+ * TODO (Phase 2+): Split this file into backend services:
+ *   - indicators/ (VWAP, ATR, RSI, MACD, EMA)
+ *   - patterns/   (candle patterns, breakout, swing, structure)
+ *   - risk/       (SL, targets, position sizing, trailing)
+ *   - ai/         (decision engine, confluence scoring, validation)
+ *   - signals/    (signal lifecycle, dedup, tracker)
+ *
+ * Current: ~1200 lines, all analysis runs in browser.
+ * Target: Move AI to backend, frontend becomes display-only.
+ *
  * Complete market analysis before any trade:
  * - Multi-timeframe structure (swing highs/lows, trend, Dow Theory)
  * - Price action (breakout, engulfing, pin bars, inside/outside bars, momentum)

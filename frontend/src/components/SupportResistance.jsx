@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react'
-import { ArrowUp, ArrowDown, Minus, Target, Shield } from 'lucide-react'
+import { ArrowUp, ArrowDown } from 'lucide-react'
 import { calculatePivotPoints } from '../utils/technicalIndicators'
 
 export default function SupportResistance({ data }) {

@@ -1,12 +1,26 @@
+/**
+ * Live Intraday — Expert Mode
+ *
+ * TODO (Phase 2+): Split into smaller components:
+ *   - LiveDataProvider (data fetching + WebSocket) — moves to hook
+ *   - MarketContextCard (VWAP, ORB, trend, RSI, swing levels)
+ *   - ActiveSetupCard (entry, SL, targets, RR, reasons)
+ *   - AlertPanel (alert history table)
+ *   - ChartSection (candlesticks + indicators)
+ *
+ * Current: ~660 lines — data, analysis, and UI are mixed.
+ * Target: WebSocket-driven, display-only UI.
+ */
+
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import axios from 'axios'
 import { Brain, TrendingUp, TrendingDown, Activity, RefreshCw, Clock, Bell, BellOff, Target, ShieldAlert, AlertTriangle } from 'lucide-react'
-import { ComposedChart, Bar, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceArea, Label } from 'recharts'
+import { ComposedChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, ReferenceArea, Label } from 'recharts'
 import useMarketStore from '../store/useMarketStore'
 import { calculateATR, calculatePivotPoints } from '../utils/technicalIndicators'
 import { calculateVWAP, generateExpertSetup } from '../utils/expertTradeEngine'
 import { savePrediction } from '../utils/api'
-import { isMarketOpen, getCurrentTradingDay, getNextTradingDay, getMinutesFromMarketOpen, getMarketPhase, fmt } from '../utils/marketUtils'
+import { isMarketOpen, getCurrentTradingDay, getMinutesFromMarketOpen, getMarketPhase, fmt } from '../utils/marketUtils'
 import { CandlestickShape } from './CandlestickChart'
 import { sendNotification } from '../utils/exportData'
 

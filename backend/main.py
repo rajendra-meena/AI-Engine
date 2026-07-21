@@ -2,6 +2,13 @@
 MarketMind AI - Backend Server
 FastAPI server with dual-layer caching (in-memory + disk CSV/JSON).
 Fetches historical index data via yfinance.
+
+TODO (Phase 2+): Split into modular services:
+  - routes/              (separate route files per domain)
+  - services/            (market_service, indicator_service, etc.)
+  - data/providers.py    (abstract data provider + yfinance adapter)
+  - ws/                  (WebSocket manager for real-time push)
+  - cache/memory_cache.py (in-memory TTL cache — reduce CSV I/O)
 """
 
 import json
