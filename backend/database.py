@@ -6,7 +6,6 @@ SQLite-backed prediction storage and result checking for backtesting.
 import sqlite3
 import json
 import os
-import asyncio
 from datetime import datetime, timedelta, timezone
 
 from core.symbols import get_ticker, list_display_names
@@ -19,22 +18,20 @@ from core.constants import (
     BACKTEST_DAILY_INTERVAL,
     DEFAULT_API_LIMIT,
 )
-from data.provider_factory import ProviderFactory
-from data.base_provider import BaseProvider
+from services.market_data_service import MarketDataService
 
 # Build a ticker → display-name map for backtesting lookups
 SYMBOL_MAP = {name: get_ticker(name) for name in list_display_names()}
 
-# Lazily initialised provider reference
-_provider: BaseProvider | None = None
+# Lazily initialised MarketDataService reference
+_service: MarketDataService | None = None
 
 
-def _get_provider() -> BaseProvider:
-    global _provider
-    if _provider is None:
-        factory = ProviderFactory()
-        _provider = factory.get_default_provider()
-    return _provider
+def _get_service() -> MarketDataService:
+    global _service
+    if _service is None:
+        _service = MarketDataService()
+    return _service
 
 
 def get_connection():
@@ -373,11 +370,11 @@ async def check_prediction_result(prediction):
         start_dt = datetime.strptime(predicted_date, "%Y-%m-%d")
         end_dt = start_dt + timedelta(days=BACKTEST_BUFFER_DAYS_INTRADAY)
 
-        provider = _get_provider()
+        svc = _get_service()
 
         if _is_intraday_interval(pred_interval):
             # ── Intraday backtest: fetch intraday candles for the predicted day ──
-            rows = await provider.fetch_intraday_range(
+            rows = await svc.get_intraday_range(
                 prediction["symbol"], start_dt, end_dt, interval=BACKTEST_INTRADAY_INTERVAL
             )
 
@@ -420,7 +417,7 @@ async def check_prediction_result(prediction):
 
         else:
             # ── Daily backtest: fetch daily OHLC data ──
-            rows = await provider.fetch_daily_range(
+            rows = await svc.get_daily_range(
                 prediction["symbol"], start_dt, end_dt
             )
 
@@ -515,8 +512,8 @@ async def _which_happened_first(symbol, date_str, stop_loss, target, bias):
         start_dt = datetime.strptime(date_str, "%Y-%m-%d")
         end_dt = start_dt + timedelta(days=BACKTEST_BUFFER_DAYS_INTRADAY)
 
-        provider = _get_provider()
-        rows = await provider.fetch_intraday_range(
+        svc = _get_service()
+        rows = await svc.get_intraday_range(
             symbol, start_dt, end_dt, interval=BACKTEST_INTRADAY_INTERVAL
         )
         if not rows:
