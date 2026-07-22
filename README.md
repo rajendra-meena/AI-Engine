@@ -1,95 +1,73 @@
 # MarketMind AI
 
-A standalone web application for viewing historical OHLC data of Indian market indices (NIFTY 50, BANKNIFTY, SENSEX) with AI-driven predictive analysis for the next trading day.
+Institutional-grade AI-powered trading platform with real-time charting, AI decision intelligence, multi-chart workspaces, and broker integration.
 
 ## Features
 
-- **📊 Historical Data**: View OHLC data for NIFTY 50, BANKNIFTY, FINNIFTY, and SENSEX
-- **📈 Interactive Charts**: Area/Line chart with SMA and Bollinger Band overlays
-- **🎯 Support & Resistance**: Classic pivot points with R1-R3 and S1-S3 levels
-- **🤖 AI Prediction Engine**: Rule-based technical analysis using RSI, MACD, ATR
-- **📉 Next-Day Forecast**: Visual projection of predicted price movement
-- **🔄 Date Range Filtering**: Quick presets (1W to 1Y) with auto-recalculation
+- **Professional Charting**: TradingView-quality charts with lightweight-charts v5
+- **AI Decision Intelligence**: Multi-engine pipeline scoring every market opportunity
+- **Multi-Chart Workspace**: Up to 8 synchronized charts with crosshair/symbol/timeframe sync
+- **Market Scanner**: Real-time scanning across indices with AI-powered scoring
+- **Portfolio & Paper Trading**: Track positions, PnL, and execute paper trades
+- **Replay Studio**: Historical replay with AI decision journal
+- **Explainability Center**: Full AI decision breakdown showing why every decision was made
+- **Analytics Dashboard**: Prediction accuracy, confidence validation, risk analysis
+- **Notification Center**: Global event bus consuming all backend events
+- **Institutional Settings**: 15-section settings control center
+- **Broker Integration**: Zerodha, Angel One, Fyers, Upstox, Dhan (adapter pattern)
+- **Authentication**: JWT + OAuth (Google/GitHub) + OTP + RBAC
 
 ## Tech Stack
 
-- **Frontend**: React 19, Vite, Tailwind CSS, Recharts, Zustand
-- **Backend**: Python FastAPI with yfinance
-- **Data**: yfinance (Yahoo Finance, free, no API key required)
+### Frontend
+- Next.js 15 (App Router)
+- TypeScript 5
+- Zustand (state management)
+- React Query (server state)
+- lightweight-charts v5
+- Recharts (analytics)
+- Tailwind CSS v4
+- Framer Motion
 
-## Prerequisites
+### Backend
+- FastAPI (Python 3.11)
+- PostgreSQL + Prisma ORM
+- Redis (Pub/Sub + caching)
+- WebSocket (real-time streaming)
+- JWT authentication
+- Docker + Docker Compose
 
-- Node.js 18+
-- Python 3.9+
-- pip (Python package manager)
-
-## Setup & Running
-
-### 1. Backend (Python FastAPI)
+## Quick Start
 
 ```bash
+# Clone
+git clone https://github.com/yourusername/marketmind-ai.git
+cd marketmind-ai
+
+# Backend
 cd backend
+python -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
-```
+uvicorn main:app --reload
 
-The backend will start at http://localhost:8000. It fetches data via Yahoo Finance (yfinance) and caches it locally as JSON files.
-
-### 2. Frontend (React + Vite)
-
-Open a new terminal:
-
-```bash
-cd frontend
+# Frontend (new terminal)
+cd trading-ui
 npm install
 npm run dev
 ```
 
-The frontend will start at http://localhost:5173 and proxy API requests to the backend.
+## Documentation
 
-### 3. Open the App
+- [Architecture](ARCHITECTURE.md) — System architecture overview
+- [API Reference](docs/API.md) — Complete API endpoint documentation
+- [Deployment Guide](docs/DEPLOYMENT.md) — Production deployment instructions
+- [Database Schema](docs/DATABASE_SCHEMA.md) — Database tables and relations
+- [Broker Integration](docs/BROKER_INTEGRATION.md) — Adding broker adapters
+- [AI Providers](docs/AI_PROVIDERS.md) — Multi-provider AI configuration
+- [Developer Guide](docs/DEVELOPER.md) — Development environment setup
+- [Environment Variables](docs/ENV.md) — All environment configuration
 
-Navigate to http://localhost:5173 in your browser.
+## License
 
-## How It Works
-
-1. **Data Fetching**: The Python backend fetches historical index data from Yahoo Finance via yfinance (free, no API key) and caches it as JSON files.
-2. **Technical Analysis**: The frontend calculates RSI, MACD, ATR, SMA, and Bollinger Bands client-side.
-3. **AI Prediction**: A rule-based engine scores bullish vs bearish signals and generates trade setups.
-4. **Pivot Points**: Classic pivot calculation with R1-R3 and S1-S3 levels.
-
-## Project Structure
-
-```
-marketmind-ai/
-├── backend/
-│   ├── main.py          # FastAPI server
-│   ├── requirements.txt
-│   └── cache/           # JSON data cache
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── Dashboard.jsx
-│   │   │   ├── StatsCard.jsx
-│   │   │   ├── MainChart.jsx
-│   │   │   ├── SupportResistance.jsx
-│   │   │   ├── AIPredictionCard.jsx
-│   │   │   └── PredictionChart.jsx
-│   │   ├── hooks/
-│   │   │   └── useMarketData.js
-│   │   ├── store/
-│   │   │   └── useMarketStore.js
-│   │   ├── utils/
-│   │   │   └── technicalIndicators.js
-│   │   ├── styles/
-│   │   │   └── globals.css
-│   │   ├── lib/
-│   │   │   └── utils.js
-│   │   ├── App.jsx
-│   │   └── main.jsx
-│   ├── index.html
-│   ├── package.json
-│   ├── vite.config.js
-│   ├── tailwind.config.js
-│   └── postcss.config.js
-└── README.md
+MIT

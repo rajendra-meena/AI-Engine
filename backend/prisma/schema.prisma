@@ -1,0 +1,427 @@
+generator client {
+  provider = "prisma-client-py"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  TRADER
+  VIEWER
+}
+
+enum AuthProvider {
+  EMAIL
+  GOOGLE
+  GITHUB
+}
+
+enum TradeDirection {
+  LONG
+  SHORT
+}
+
+enum OrderType {
+  MARKET
+  LIMIT
+  STOP
+  STOP_LIMIT
+  BRACKET
+  COVER
+  ICEBERG
+}
+
+enum OrderStatus {
+  PENDING
+  OPEN
+  PARTIAL
+  FILLED
+  CANCELLED
+  REJECTED
+  EXPIRED
+}
+
+enum PredictionDirection {
+  BULLISH
+  BEARISH
+  NEUTRAL
+}
+
+enum PredictionStatus {
+  PENDING
+  ACTIVE
+  HIT
+  MISS
+  STOPLOSS_HIT
+  EXPIRED
+}
+
+/// Users & Authentication
+model User {
+  id             String       @id @default(cuid())
+  email          String       @unique
+  passwordHash   String?
+  name           String
+  role           UserRole     @default(VIEWER)
+  provider       AuthProvider @default(EMAIL)
+  providerId     String?
+  avatar         String?
+  emailVerified  Boolean      @default(false)
+  otpSecret      String?
+  phone          String?
+  lastLogin      DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  deletedAt      DateTime?
+
+  sessions    Session[]
+  devices     Device[]
+  trades      Trade[]
+  orders      Order[]
+  predictions Prediction[]
+  notifications Notification[]
+  portfolios  Portfolio[]
+  watchlists  Watchlist[]
+  auditLogs   AuditLog[]
+  aiDecisions AIDecision[]
+
+  @@index([email])
+  @@index([role])
+}
+
+/// Auth sessions
+model Session {
+  id           String   @id @default(cuid())
+  userId       String
+  refreshToken String   @unique
+  userAgent    String?
+  ip           String?
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([refreshToken])
+  @@index([expiresAt])
+}
+
+/// Device management
+model Device {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String?
+  type      String?
+  lastIp    String?
+  lastLogin DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Trades
+model Trade {
+  id             String         @id @default(cuid())
+  userId         String
+  symbol         String
+  direction      TradeDirection
+  entry          Float
+  exit           Float?
+  quantity       Int
+  pnl            Float?
+  pnlPercent     Float?
+  rr             Float?
+  aiScore        Int?
+  aiConfidence   Int?
+  duration       Int?
+  exitReason     String?
+  pattern        String?
+  trend          String?
+  notes          String?
+  openedAt       DateTime       @default(now())
+  closedAt       DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  deletedAt      DateTime?
+
+  user      User       @relation(fields: [userId], references: [id])
+  orders    Order[]
+  journal   JournalEntry[]
+
+  @@index([userId])
+  @@index([symbol])
+  @@index([openedAt])
+  @@index([status])
+}
+
+/// Orders
+model Order {
+  id           String     @id @default(cuid())
+  userId       String
+  tradeId      String?
+  symbol       String
+  type         OrderType
+  side         String
+  quantity     Int
+  price        Float?
+  stopPrice    Float?
+  filledQty    Int        @default(0)
+  avgFillPrice Float?
+  status       OrderStatus @default(PENDING)
+  stopLoss     Float?
+  takeProfit   Float?
+  brokerOrderId String?
+  brokerName   String?
+  errorLog     String?
+  expiresAt    DateTime?
+  filledAt     DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  user  User   @relation(fields: [userId], references: [id])
+  trade Trade? @relation(fields: [tradeId], references: [id])
+
+  @@index([userId])
+  @@index([symbol])
+  @@index([status])
+  @@index([brokerOrderId])
+}
+
+/// AI Predictions
+model Prediction {
+  id              Int                  @id @default(autoincrement())
+  userId          String?
+  symbol          String
+  interval        String
+  direction       PredictionDirection?
+  confidence      Float?
+  score           Int?
+  entryZone       Float?
+  stopLoss        Float?
+  target          Float?
+  status          PredictionStatus     @default(PENDING)
+  reason          String?
+  pattern         String?
+  trend           String?
+  riskLevel       String?
+  predictedAt     DateTime?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([symbol])
+  @@index([status])
+  @@index([createdAt])
+}
+
+/// AI Decision Log
+model AIDecision {
+  id           String   @id @default(cuid())
+  userId       String?
+  symbol       String
+  interval     String
+  decision     String
+  score        Int
+  confidence   Int
+  riskLevel    String
+  riskScore    Int
+  scoreGrade   String
+  confidenceGrade String
+  tradePlan    Json?
+  reasoning    Json?
+  warnings     Json?
+  createdAt    DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([symbol])
+  @@index([createdAt])
+}
+
+/// Notifications
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String?
+  title     String
+  message   String?
+  category  String
+  priority  String
+  read      Boolean  @default(false)
+  dismissed Boolean @default(false)
+  source    String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([category])
+  @@index([read])
+  @@index([createdAt])
+}
+
+/// Portfolio
+model Portfolio {
+  id            String  @id @default(cuid())
+  userId        String  @unique
+  capital       Float   @default(100000)
+  totalPnl      Float   @default(0)
+  openPositions Int     @default(0)
+  closedTrades  Int     @default(0)
+  winRate       Float   @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+/// Watchlists
+model Watchlist {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  symbols   Json     @default("[]")
+  color     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// Journal Entries
+model JournalEntry {
+  id        String   @id @default(cuid())
+  tradeId   String
+  entry     Float
+  exit      Float?
+  direction String
+  reason    String?
+  aiScore   Int?
+  result    String?
+  notes     String?
+  createdAt DateTime @default(now())
+
+  trade Trade @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+
+  @@index([tradeId])
+}
+
+/// Market Data Cache
+model MarketDataCache {
+  id        String   @id @default(cuid())
+  symbol    String
+  interval  String
+  data      Json
+  cachedAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@unique([symbol, interval])
+  @@index([expiresAt])
+}
+
+/// Scanner Results
+model ScannerResult {
+  id        String   @id @default(cuid())
+  symbol    String
+  score     Int
+  confidence Int
+  risk      String
+  rr        Float
+  trend     String
+  pattern   String?
+  bias      String
+  createdAt DateTime @default(now())
+
+  @@index([symbol])
+  @@index([score])
+  @@index([createdAt])
+}
+
+/// Replay Sessions
+model ReplaySession {
+  id           String   @id @default(cuid())
+  userId       String?
+  symbol       String
+  interval     String
+  totalCandles Int
+  currentIndex Int      @default(0)
+  state        String   @default("idle")
+  speed        Int      @default(1)
+  createdAt    DateTime @default(now())
+  finishedAt   DateTime?
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+/// Backtest Results
+model BacktestResult {
+  id             String   @id @default(cuid())
+  userId         String?
+  symbol         String
+  interval       String
+  startDate      DateTime
+  endDate        DateTime
+  totalTrades    Int
+  winRate        Float
+  profitFactor   Float
+  maxDrawdown    Float
+  sharpeRatio    Float?
+  totalReturn    Float
+  data           Json?
+  createdAt      DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+/// Audit Logs
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  resource  String
+  detail    Json?
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
+
+/// Settings
+model UserSettings {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  data      Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+/// Analytics Snapshots
+model AnalyticsSnapshot {
+  id        String   @id @default(cuid())
+  userId    String?
+  symbol    String
+  type      String
+  data      Json
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([type])
+  @@index([createdAt])
+}
