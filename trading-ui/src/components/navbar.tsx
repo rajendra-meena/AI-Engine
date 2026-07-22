@@ -4,7 +4,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useTheme } from "next-themes"
 import { useEffect, useState } from "react"
-import { Brain, BarChart3, Activity, Target, Settings, Briefcase, BrainCircuit, LayoutDashboard, GitBranch, FlaskConical, Cpu, Sun, Moon } from "lucide-react"
+import { Brain, BarChart3, Activity, Target, Settings, Briefcase, BrainCircuit, LayoutDashboard, GitBranch, FlaskConical, Cpu, Radio, Sun, Moon } from "lucide-react"
 import { NotificationCenter } from "@/components/notifications/NotificationCenter"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { href: "/live", label: "Live", icon: Activity },
   { href: "/workspace", label: "Charts", icon: LayoutDashboard },
   { href: "/command", label: "Command", icon: Cpu },
+  { href: "/intelligence", label: "Intel", icon: Radio },
   { href: "/strategy", label: "Strategies", icon: GitBranch },
   { href: "/portfolio", label: "Portfolio", icon: Briefcase },
   { href: "/settings", label: "Settings", icon: Settings },
