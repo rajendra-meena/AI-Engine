@@ -33,6 +33,7 @@ from api.ai_decision import router as ai_router, set_ai_decision_engine
 from api.support_resistance import router as sr_router, set_sr_engine
 from api.trading_context import router as context_router, set_trading_context_engine
 from api.ticks import router as tick_router, set_tick_engine
+from api.strategy.routes import router as strategy_router
 from services.prediction_service import initialize as init_prediction_service
 from services.live_market_engine import LiveMarketDataEngine
 from websocket.gateway import WebSocketGateway
@@ -47,6 +48,8 @@ from ai_decision.engine import AIDecisionEngine
 from multi_timeframe.engine import MTFEngine
 from tick.engine import TickEngine
 from core.event_bus import EventBus
+from core.event_model import Event
+from core.symbols import list_display_names
 from utils.logger import log_info
 
 # ── Global services ──
@@ -143,6 +146,52 @@ async def lifespan(app: FastAPI):
     replay_engine = ReplayEngine(market_service, event_bus)
     set_replay_engine(replay_engine)
 
+    # Seed engines with recent candle data so they produce initial snapshots
+    # (prevents 404 on first API call).
+    # Note: we feed engines directly rather than via Event Bus to ensure
+    # synchronous processing before the first API request arrives.
+    for seed_symbol in list_display_names()[:1]:
+        try:
+            data = await market_service.get_intraday(seed_symbol, "15m", 5)
+            seed_candles = data.get("candles", [])
+            if seed_candles:
+                from core.event_model import Event as BusEvent
+                for sc in seed_candles:
+                    candle_payload = {
+                        "symbol": seed_symbol, "interval": "15m",
+                        "candle": {
+                            "symbol": seed_symbol, "interval": "15m",
+                            "time": sc.get("time", ""),
+                            "open": sc.get("open", 0),
+                            "high": sc.get("high", 0),
+                            "low": sc.get("low", 0),
+                            "close": sc.get("close", 0),
+                            "volume": sc.get("volume", 0),
+                            "is_closed": True,
+                        },
+                    }
+                    ev = BusEvent(type="candle_closed", source="bootstrap", payload=candle_payload)
+                    if indicator_engine and indicator_engine._running:
+                        await indicator_engine._on_candle_closed(ev)
+                    if market_structure_engine and market_structure_engine._running:
+                        await market_structure_engine._on_candle_closed(ev)
+                    if pattern_engine and pattern_engine._running:
+                        await pattern_engine._on_candle_closed(ev)
+
+                # Feed SR engine with latest results from the 3 upstream engines
+                if sr_engine and sr_engine._running:
+                    ind_snap = indicator_engine.latest_snapshot(seed_symbol, "15m") if indicator_engine else None
+                    struct_snap = market_structure_engine.latest_snapshot(seed_symbol, "15m") if market_structure_engine else None
+                    if ind_snap:
+                        await sr_engine._on_indicator(BusEvent(type="indicators_updated", source="bootstrap", payload={"symbol": seed_symbol, **ind_snap}))
+                    if struct_snap:
+                        await sr_engine._on_structure(BusEvent(type="structure_updated", source="bootstrap", payload={"symbol": seed_symbol, **struct_snap}))
+                    await sr_engine._on_candle(ev)
+
+                log_info("Engines seeded", symbol=seed_symbol, count=len(seed_candles))
+        except Exception as e:
+            log_warn("Engine seeding skipped", error=str(e))
+
     yield  # Application runs here
 
     # ── Shutdown ──
@@ -207,6 +256,7 @@ app.include_router(sr_router)
 app.include_router(ai_router)
 app.include_router(mtf_router)
 app.include_router(tick_router)
+app.include_router(strategy_router)
 
 
 # ── WebSocket endpoint ──
