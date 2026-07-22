@@ -34,6 +34,7 @@ from api.support_resistance import router as sr_router, set_sr_engine
 from api.trading_context import router as context_router, set_trading_context_engine
 from api.ticks import router as tick_router, set_tick_engine
 from api.strategy.routes import router as strategy_router
+from api.ai_orchestrator import router as ai_orchestrator_router
 from api.research.routes import router as research_router
 from services.prediction_service import initialize as init_prediction_service
 from services.live_market_engine import LiveMarketDataEngine
@@ -259,6 +260,7 @@ app.include_router(mtf_router)
 app.include_router(tick_router)
 app.include_router(strategy_router)
 app.include_router(research_router)
+app.include_router(ai_orchestrator_router)
 
 
 # ── WebSocket endpoint ──
