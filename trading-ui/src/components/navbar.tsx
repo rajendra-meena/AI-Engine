@@ -17,6 +17,7 @@ const NAV_ITEMS = [
   { href: "/intelligence", label: "Intel", icon: Radio },
   { href: "/strategy", label: "Strategies", icon: GitBranch },
   { href: "/portfolio", label: "Portfolio", icon: Briefcase },
+  { href: "/ml", label: "ML", icon: Cpu },
   { href: "/settings", label: "Settings", icon: Settings },
 ]
 

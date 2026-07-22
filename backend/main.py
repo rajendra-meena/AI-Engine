@@ -35,6 +35,7 @@ from api.trading_context import router as context_router, set_trading_context_en
 from api.ticks import router as tick_router, set_tick_engine
 from api.strategy.routes import router as strategy_router
 from api.market_intelligence import router as market_intelligence_router
+from api.ml_routes import router as ml_router
 from api.ai_orchestrator import router as ai_orchestrator_router
 from api.research.routes import router as research_router
 from services.prediction_service import initialize as init_prediction_service
@@ -263,6 +264,7 @@ app.include_router(strategy_router)
 app.include_router(research_router)
 app.include_router(ai_orchestrator_router)
 app.include_router(market_intelligence_router)
+app.include_router(ml_router)
 
 
 # ── WebSocket endpoint ──
