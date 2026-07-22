@@ -4,7 +4,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useTheme } from "next-themes"
 import { useEffect, useState } from "react"
-import { Brain, BarChart3, Activity, Target, Settings, Briefcase, BrainCircuit, Sun, Moon } from "lucide-react"
+import { Brain, BarChart3, Activity, Target, Settings, Briefcase, BrainCircuit, LayoutDashboard, Sun, Moon } from "lucide-react"
 import { NotificationCenter } from "@/components/notifications/NotificationCenter"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button"
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: BarChart3 },
   { href: "/live", label: "Live", icon: Activity },
+  { href: "/workspace", label: "Charts", icon: LayoutDashboard },
   { href: "/portfolio", label: "Portfolio", icon: Briefcase },
   { href: "/explain", label: "Explain", icon: BrainCircuit },
   { href: "/backtest", label: "Backtest", icon: Target },
