@@ -2,8 +2,10 @@
 
 import { useTheme } from "next-themes"
 import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { Brain, Search, Sun, Moon, Bell, Settings, Menu, ChevronDown } from "lucide-react"
 import { useLayoutStore } from "@/store/useLayoutStore"
+import { useNotificationStore } from "@/store/useNotificationStore"
 import { ConnectionBadge } from "@/components/live/ConnectionBadge"
 import { ReplayBadge } from "@/components/live/ReplayBadge"
 import { cn } from "@/lib/utils"
@@ -17,9 +19,11 @@ const SYMBOLS = [
 const TIMEFRAMES = ["1m", "3m", "5m", "15m", "30m", "60m"]
 
 export function Header() {
+  const router = useRouter()
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
   const toggleSidebar = useLayoutStore((s) => s.toggleSidebar)
+  const toggleDrawer = useNotificationStore((s) => s.toggleDrawer)
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMounted(true) }, [])
 
@@ -91,7 +95,7 @@ export function Header() {
         </div>
 
         {/* Notifications */}
-        <button className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors" aria-label="Notifications">
+        <button onClick={toggleDrawer} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors" aria-label="Notifications">
           <Bell className="w-4 h-4" />
         </button>
 
@@ -107,7 +111,7 @@ export function Header() {
         )}
 
         {/* Settings */}
-        <button className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors" aria-label="Settings">
+        <button onClick={() => router.push("/settings")} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors" aria-label="Settings">
           <Settings className="w-4 h-4" />
         </button>
 

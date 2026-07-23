@@ -93,7 +93,7 @@ export function MultiChartWorkspace() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
-        <div className="w-48 shrink-0 border-r p-1 space-y-1 overflow-y-auto hidden lg:flex lg:flex-col">
+        <div className="w-55 shrink-0 border-r p-1 space-y-1 overflow-y-auto hidden lg:flex lg:flex-col">
           <WorkspaceManager
             workspaces={ws.workspaces}
             activeId={ws.activeWorkspaceId}

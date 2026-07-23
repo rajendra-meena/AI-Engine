@@ -27,7 +27,7 @@ export function ToastContainer() {
   }, [lastToast, settings.autoDismiss, settings.autoDismissSeconds, clearToast])
 
   return (
-    <div className="fixed bottom-4 right-4 z-[60] space-y-2">
+    <div className="fixed top-4 right-4 z-[60] space-y-2">
       <AnimatePresence>
         {lastToast && (
           <motion.div

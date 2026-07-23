@@ -60,7 +60,7 @@ export function NotificationDrawer({ className }: NotificationDrawerProps) {
             exit={{ x: "100%" }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
             className={cn(
-              "fixed right-0 top-0 bottom-0 z-50 w-[420px] max-w-[95vw] bg-card border-l shadow-2xl flex flex-col",
+              "fixed right-0 top-0 bottom-0 z-50 w-[420px] max-w-[95vw] bg-card border-l shadow-2xl flex flex-col h-screen",
               className,
             )}
             onKeyDown={handleKeyDown}

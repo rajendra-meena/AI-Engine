@@ -31,7 +31,7 @@ export function ChartViewport({
   }, [])
 
   return (
-    <div ref={containerRef} className="flex flex-col h-full rounded-lg border bg-card overflow-hidden">
+    <div ref={containerRef} className="flex flex-col min-h-80 rounded-lg border bg-card overflow-hidden">
       <ChartHeader
         chart={chart}
         isFullscreen={isFullscreen}
