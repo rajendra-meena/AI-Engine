@@ -3,9 +3,10 @@
 import { useTheme } from "next-themes"
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Brain, Search, Sun, Moon, Bell, Settings, Menu, ChevronDown } from "lucide-react"
+import { Brain, Search, Sun, Moon, Settings, Menu, ChevronDown } from "lucide-react"
 import { useLayoutStore } from "@/store/useLayoutStore"
 import { useNotificationStore } from "@/store/useNotificationStore"
+import { NotificationBell } from "@/components/notifications/NotificationBell"
 import { NotificationDrawer } from "@/components/notifications/NotificationDrawer"
 import { ToastContainer } from "@/components/notifications/ToastContainer"
 import { ConnectionBadge } from "@/components/live/ConnectionBadge"
@@ -25,6 +26,7 @@ export function Header() {
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
   const toggleSidebar = useLayoutStore((s) => s.toggleSidebar)
+  const unreadCount = useNotificationStore((s) => s.unreadCount)
   const toggleDrawer = useNotificationStore((s) => s.toggleDrawer)
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMounted(true) }, [])
@@ -101,9 +103,7 @@ export function Header() {
         </div>
 
         {/* Notifications */}
-        <button onClick={toggleDrawer} className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors" aria-label="Notifications">
-          <Bell className="w-4 h-4" />
-        </button>
+        <NotificationBell unreadCount={unreadCount} onClick={toggleDrawer} />
 
         {/* Theme toggle */}
         {mounted && (

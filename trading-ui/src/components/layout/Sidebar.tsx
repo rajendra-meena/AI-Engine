@@ -5,7 +5,8 @@ import { cn } from "@/lib/utils"
 import { motion } from "framer-motion"
 import { useRouter } from "next/navigation"
 import {
-  LayoutDashboard, TrendingUp, History, Target, Wallet, Star, BarChart3, Settings, Wifi, ChevronLeft,
+  LayoutDashboard, TrendingUp, History, Target, Wallet, Star, BarChart3, Settings,
+  GitBranch, Radio, Cpu, Lightbulb, Wifi, ChevronLeft,
 } from "lucide-react"
 import { useCallback, useEffect } from "react"
 
@@ -24,6 +25,10 @@ const NAV_ITEMS: NavItem[] = [
   { id: "backtest", label: "Backtest", icon: <Target className="w-4 h-4" />, href: "/backtest" },
   { id: "paper", label: "Paper Trading", icon: <Wallet className="w-4 h-4" />, href: "/portfolio" },
   { id: "watchlist", label: "Watchlist", icon: <Star className="w-4 h-4" />, href: "/portfolio" },
+  { id: "strategy", label: "Strategies", icon: <GitBranch className="w-4 h-4" />, href: "/strategy" },
+  { id: "intelligence", label: "Intelligence", icon: <Radio className="w-4 h-4" />, href: "/intelligence" },
+  { id: "ml", label: "ML", icon: <Cpu className="w-4 h-4" />, href: "/ml" },
+  { id: "command", label: "Command", icon: <Lightbulb className="w-4 h-4" />, href: "/command" },
   { id: "analytics", label: "Analytics", icon: <BarChart3 className="w-4 h-4" />, href: "/research" },
   { id: "settings", label: "Settings", icon: <Settings className="w-4 h-4" />, href: "/settings" },
 ]

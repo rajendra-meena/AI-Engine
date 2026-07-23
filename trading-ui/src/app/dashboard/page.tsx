@@ -1,24 +1,17 @@
 "use client"
 
-import { Header } from "@/components/layout/Header"
-import { Sidebar } from "@/components/layout/Sidebar"
+import { AppLayout } from "@/components/layout/AppLayout"
 import { Workspace } from "@/components/layout/Workspace"
 import { RightPanel } from "@/components/layout/RightPanel"
 import { BottomPanel } from "@/components/layout/BottomPanel"
-import { useRealtime } from "@/hooks/useRealtime"
 
 export default function DashboardPage() {
-  useRealtime()
-
   return (
-    <div className="h-screen flex flex-col bg-background overflow-hidden">
-      <Header />
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar />
+    <AppLayout bottom={<BottomPanel />}>
+      <div className="flex flex-1 overflow-hidden h-full">
         <Workspace />
         <RightPanel />
       </div>
-      <BottomPanel />
-    </div>
+    </AppLayout>
   )
 }
