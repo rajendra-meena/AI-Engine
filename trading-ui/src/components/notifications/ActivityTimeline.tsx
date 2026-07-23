@@ -39,7 +39,7 @@ export function ActivityTimeline({ notifications, maxItems = 50, className }: Ac
     if (yesterdayItems.length) groups.push({ label: "Yesterday", items: yesterdayItems })
     if (olderItems.length) groups.push({ label: "Older", items: olderItems })
     return groups
-  }, [notifications, maxItems])
+  }, [notifications, maxItems, now])
 
   if (!notifications.length) {
     return <div className="text-center text-[10px] text-muted-foreground/50 py-8">No activity yet</div>

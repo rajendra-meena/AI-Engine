@@ -33,7 +33,7 @@ class SRUnit:
         self._indicator: dict[str, Any] | None = None
         self._structure: dict[str, Any] | None = None
         self._supply_demand = SupplyDemandDetector()
-        self._history: deque = _dq(maxlen=HISTORY_LIMIT)
+        self._history: deque = deque(maxlen=HISTORY_LIMIT)
         self._update_count = 0
 
     def update_candle(self, payload: dict):

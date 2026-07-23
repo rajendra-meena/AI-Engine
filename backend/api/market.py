@@ -10,6 +10,7 @@ from datetime import date, timedelta
 from fastapi import APIRouter, Query
 
 from core.constants import DAILY_LOOKBACK_DEFAULT_DAYS
+from core import service_locator
 from services.market_data_service import MarketDataService
 
 router = APIRouter(tags=["market"])
@@ -92,56 +93,51 @@ async def engine_refresh(
     days: int = 3,
 ):
     """Trigger a live data refresh for a symbol via the engine."""
-    from main import get_live_engine
-    engine = get_live_engine()
+    engine = service_locator.ensure_live_engine()
     return await engine.refresh_symbol(symbol, interval, days)
 
 
 @router.post("/api/engine/refresh-all")
 async def engine_refresh_all(interval: str = "15m", days: int = 3):
     """Trigger a live data refresh for ALL tracked symbols."""
-    from main import get_live_engine
-    engine = get_live_engine()
+    engine = service_locator.ensure_live_engine()
     return await engine.refresh_all(interval, days)
 
 
 @router.get("/api/engine/status")
 async def engine_status():
     """Return the Live Market Data Engine status and metrics."""
-    from main import get_live_engine
-    engine = get_live_engine()
+    engine = service_locator.ensure_live_engine()
     return engine.get_engine_metrics()
 
 
 @router.get("/api/stream/status")
 async def stream_status():
     """Return the Market Stream Router status and statistics."""
-    from main import stream_router
-    if stream_router is None:
+    router = service_locator.stream_router
+    if router is None:
         return {"running": False}
-    return stream_router.get_stats()
+    return router.get_stats()
 
 
 @router.get("/api/stream/consumers")
 async def stream_consumers():
     """Return registered stream consumers."""
-    from main import stream_router
-    if stream_router is None:
+    router = service_locator.stream_router
+    if router is None:
         return {"consumers": []}
-    return {"consumers": stream_router.list_consumers()}
+    return {"consumers": router.list_consumers()}
 
 
 @router.get("/api/websocket/status")
 async def websocket_status():
     """Return WebSocket Gateway connection statistics."""
-    from main import get_websocket_gateway
-    gateway = get_websocket_gateway()
+    gateway = service_locator.ensure_gateway()
     return await gateway.get_connection_stats()
 
 
 @router.get("/api/engine/symbols")
 async def engine_symbols():
     """Return per-symbol tracking status from the Live Engine."""
-    from main import get_live_engine
-    engine = get_live_engine()
+    engine = service_locator.ensure_live_engine()
     return {"symbols": engine.get_all_symbol_status()}

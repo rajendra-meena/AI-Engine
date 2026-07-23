@@ -1,7 +1,7 @@
 "use client"
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { useEffect, useRef } from "react"
+import { useEffect } from "react"
 import { getWSManager } from "@/services/websocketManager"
 import { useRealtimeStore } from "@/store/useRealtimeStore"
 
@@ -16,7 +16,6 @@ export function useSubscriptions(
   channels: string[],
   symbols: string[]
 ) {
-  const initialized = useRef(false)
 
   useEffect(() => {
     const ws = getWSManager()
@@ -25,10 +24,15 @@ export function useSubscriptions(
     })
 
     // Track streaming symbols
-    symbols.forEach((s) => useRealtimeStore.getState().addStreamingSymbol(s))
+    const store = useRealtimeStore.getState()
+    symbols.forEach((s) => store.addStreamingSymbol(s))
 
     return () => {
       ws.unsubscribe(id)
+      // Clean up streaming symbols on unmount
+      const s = useRealtimeStore.getState()
+      symbols.forEach((sym) => s.removeStreamingSymbol(sym))
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, channels.join(","), symbols.join(",")])
 }

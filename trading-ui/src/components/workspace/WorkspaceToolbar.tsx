@@ -25,7 +25,7 @@ interface WorkspaceToolbarProps {
 
 export function WorkspaceToolbar({
   layout, chartCount, fullscreen, monitorMode, showMiniMap, showStatus,
-  onLayoutChange, onFullscreen, onMonitorMode, onExport, onImport,
+  onLayoutChange, onFullscreen, onMonitorMode,
   onToggleMiniMap, onToggleStatus, className,
 }: WorkspaceToolbarProps) {
   return (

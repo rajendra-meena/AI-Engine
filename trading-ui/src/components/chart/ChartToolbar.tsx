@@ -2,7 +2,7 @@
 
 import { useChartStore, type ChartDrawingTool } from "@/store/useChartStore"
 import { cn } from "@/lib/utils"
-import { Crosshair, Minus, Move, TrendingUp, Target, Ruler, CircleDot, Maximize2 } from "lucide-react"
+import { Crosshair, Minus, Move, TrendingUp, Ruler, CircleDot, Maximize2 } from "lucide-react"
 
 const TOOLS: { id: ChartDrawingTool; icon: React.ReactNode; label: string }[] = [
   { id: "crosshair", icon: <Crosshair className="w-3.5 h-3.5" />, label: "Crosshair" },

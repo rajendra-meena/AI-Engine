@@ -129,7 +129,7 @@ export function MarketIntelligenceDashboard() {
         </p>
       </div>
     </div>
-  ), [regime, events, news, flow, sectors])
+  ), [regime, events, flow, sectors])
 
   const newsContent = useMemo(() => (
     <div className="space-y-1">

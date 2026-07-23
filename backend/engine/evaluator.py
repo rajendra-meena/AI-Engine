@@ -8,7 +8,8 @@ against market data to produce entry/exit signals.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from dataclasses import field as dc_field
 from datetime import datetime
 from enum import Enum
 from typing import Any, Optional
@@ -40,7 +41,7 @@ class Condition:
     operator: ComparisonOperator
     value: float | str | bool
     field: Optional[str] = None
-    params: dict[str, Any] = field(default_factory=dict)
+    params: dict[str, Any] = dc_field(default_factory=dict)
     label: Optional[str] = None
 
 
@@ -49,7 +50,7 @@ class Rule:
     id: str
     label: str
     operator: RuleOperator
-    conditions: list[Condition] = field(default_factory=list)
+    conditions: list[Condition] = dc_field(default_factory=list)
     priority: int = 1
 
 
@@ -58,7 +59,7 @@ class EvaluationResult:
     triggered: bool
     rule_id: str
     rule_label: str
-    conditions_results: list[dict[str, Any]] = field(default_factory=list)
+    conditions_results: list[dict[str, Any]] = dc_field(default_factory=list)
     score: float = 0.0
 
 

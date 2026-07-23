@@ -34,6 +34,15 @@ export interface IndicatorConfig {
   label: string
 }
 
+/* Names of boolean-only keys that can be toggled */
+export type ToggleableKey =
+  | "ema" | "sma" | "vwap" | "supertrend"
+  | "patterns" | "structure" | "bos" | "choch"
+  | "sr" | "supplyDemand" | "liquidity" | "ai"
+  | "labels" | "targets"
+  | "zoneLabels" | "trendLines" | "markerLabels"
+  | "animations"
+
 export interface OverlayState {
   /* Toggle flags (keep original for backward compat) */
   ema: boolean
@@ -63,7 +72,7 @@ export interface OverlayState {
   animations: boolean
 
   /* Actions */
-  toggle: (key: keyof OverlayState) => void
+  toggle: (key: ToggleableKey) => void
   setAll: (value: boolean) => void
   setIndicatorConfig: (id: IndicatorId, config: Partial<IndicatorConfig>) => void
   setIndicatorColor: (id: IndicatorId, color: string) => void
@@ -113,7 +122,7 @@ export const useOverlayStore = create<OverlayState>()(
       animations: true,
 
       /* --- actions --- */
-      toggle: (key) => set((s) => ({ [key]: !(s as unknown as Record<string, boolean>)[key] })),
+      toggle: (key) => set((s) => ({ [key]: !s[key] })),
       setAll: (value) =>
         set({
           ema: value, sma: value, vwap: value, supertrend: value,

@@ -37,12 +37,13 @@ export function CommandCenter() {
     ai: decision ? "healthy" as const : "degraded" as const,
   }), [connection.state, decision])
 
-  const providerHealth = aiHealth?.providers ?? {}
   const score = decision?.score ?? 0
   const confidence = decision?.confidence ?? 0
   const riskLevel = decision?.risk_level ?? "MEDIUM"
 
-  const overviewContent = useMemo(() => (
+  const overviewContent = useMemo(() => {
+    const provHealth = aiHealth?.providers ?? {}
+    return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
         {Object.entries(systemHealth).map(([key, val]) => (
@@ -62,7 +63,7 @@ export function CommandCenter() {
       <div className="rounded-lg border bg-card p-3">
         <div className="text-[9px] font-medium text-muted-foreground uppercase tracking-wider mb-2">Provider Status</div>
         <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
-          {Object.entries(providerHealth).length > 0 ? Object.entries(providerHealth).map(([name, health]) => (
+          {Object.entries(provHealth).length > 0 ? Object.entries(provHealth).map(([name, health]) => (
             <div key={name} className="flex items-center gap-1.5 rounded bg-muted/20 px-2 py-1">
               <span className={cn("w-1.5 h-1.5 rounded-full", health ? "bg-emerald-500" : "bg-red-500")} />
               <span className="text-[9px] capitalize">{name}</span>
@@ -73,7 +74,7 @@ export function CommandCenter() {
         </div>
       </div>
     </div>
-  ), [systemHealth, score, confidence, riskLevel, connection.latency, connection.state, stats, providerHealth])
+  )}, [systemHealth, score, confidence, riskLevel, connection.latency, connection.state, stats, aiHealth])
 
   const opportunitiesContent = useMemo(() => (
     <div className="rounded-lg border bg-card p-4 text-center text-[10px] text-muted-foreground">

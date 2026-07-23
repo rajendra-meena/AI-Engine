@@ -1,5 +1,5 @@
 import { create } from "zustand"
-import type { ConnectionState, ConnectionQuality, ConnectionInfo, ReconnectEvent } from "@/types/websocket"
+import type { ConnectionState, ConnectionInfo, ReconnectEvent } from "@/types/websocket"
 
 interface RealtimeState {
   connection: ConnectionInfo

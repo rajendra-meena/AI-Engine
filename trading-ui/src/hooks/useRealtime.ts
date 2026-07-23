@@ -4,7 +4,6 @@
 import { useEffect, useRef } from "react"
 import { getWSManager } from "@/services/websocketManager"
 import { useRealtimeStore } from "@/store/useRealtimeStore"
-import { useChartStore } from "@/store/useChartStore"
 import { useChartData } from "./useChartData"
 
 /**
@@ -14,6 +13,12 @@ import { useChartData } from "./useChartData"
 export function useRealtime() {
   const { refetch } = useChartData()
   const initialized = useRef(false)
+  const refetchRef = useRef(refetch)
+
+  // Keep refetchRef in sync without writing refs during render
+  useEffect(() => {
+    refetchRef.current = refetch
+  }, [refetch])
 
   useEffect(() => {
     if (initialized.current) return
@@ -45,7 +50,7 @@ export function useRealtime() {
 
     // Candle closed → refresh chart data
     const unsubCandle = ws.onEvent("candle_closed", () => {
-      refetch()
+      refetchRef.current()
     })
 
     // Replay events
@@ -80,5 +85,5 @@ export function useRealtime() {
       unsubReplayFinish()
       unsubHealth()
     }
-  }, [refetch])
+  }, []) // intentionally empty — effect runs once; refetchRef avoids stale closure
 }

@@ -54,6 +54,7 @@ from tick.engine import TickEngine
 from core.event_bus import EventBus
 from core.event_model import Event
 from core.symbols import list_display_names
+from core import service_locator
 from utils.logger import log_info
 
 # ── Global services ──
@@ -139,15 +140,24 @@ async def lifespan(app: FastAPI):
 
     # Start the Live Market Data Engine
     live_engine = LiveMarketDataEngine(event_bus, market_service)
+    service_locator.live_engine = live_engine
     await live_engine.start()
+
+    # Start the Tick Engine (already set above)
+    service_locator.tick_engine = tick_engine
+
+    # Start the Stream Router (already set above)
+    service_locator.stream_router = stream_router
 
     # Start the WebSocket Gateway
     websocket_gateway = WebSocketGateway(event_bus)
+    service_locator.websocket_gateway = websocket_gateway
     await websocket_gateway.start()
 
     # Create the Replay Engine
     from replay.engine import ReplayEngine
     replay_engine = ReplayEngine(market_service, event_bus)
+    service_locator.replay_engine = replay_engine
     set_replay_engine(replay_engine)
 
     # Seed engines with recent candle data so they produce initial snapshots

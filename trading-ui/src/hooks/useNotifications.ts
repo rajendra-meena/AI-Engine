@@ -23,6 +23,7 @@ export function useNotifications() {
     const ws = getWSManager()
 
     // Listen for all events via the wildcard dispatcher
+    // (single subscription avoids duplicate notifications from per-type listeners)
     const unsubAll = ws.onEvent("*", (payload: any) => {
       const eventType = payload?.type || payload?.event || "unknown"
       if (eventType === "pong" || eventType === "welcome") return
@@ -31,32 +32,10 @@ export function useNotifications() {
         type: eventType,
         payload: payload?.payload || payload,
       })
-      store.addNotification(notification)
+      useNotificationStore.getState().addNotification(notification)
     })
 
-    // Specific backend event types to subscribe to
-    const BACKEND_EVENTS = [
-      "ai_decision_updated",
-      "indicator_updated", "indicators_updated",
-      "structure_updated", "bos_detected", "choch_detected",
-      "pattern_detected", "breakout_detected",
-      "sr_updated", "sr_supply_zone_created", "sr_demand_zone_created",
-      "replay_started", "replay_stopped", "replay_paused",
-      "replay_resumed", "replay_finished", "replay_seek",
-      "scanner_alert",
-      "trade_executed", "position_closed", "order_filled",
-      "system_status", "provider_status",
-    ]
-
-    const unsubs = BACKEND_EVENTS.map((eventType) =>
-      ws.onEvent(eventType, (payload: any) => {
-        store.addNotification(
-          notificationService.eventToNotification({ type: eventType, payload })
-        )
-      })
-    )
-
-    wsCleanup.current = [unsubAll, ...unsubs]
+    wsCleanup.current = [unsubAll]
 
     // Request notification permission
     if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "default") {
@@ -73,20 +52,18 @@ export function useNotifications() {
     const ws = getWSManager()
     const unsubState = ws.onState((state) => {
       if (state === "connected") {
-        store.addNotification(
+        useNotificationStore.getState().addNotification(
           notificationService.createNotification("connection_restored")
         )
       } else if (state === "disconnected" || state === "reconnecting") {
-        store.addNotification(
+        useNotificationStore.getState().addNotification(
           notificationService.createNotification("connection_lost")
         )
       }
     })
-    wsCleanup.current.push(unsubState)
     return () => {
-      wsCleanup.current.forEach((fn) => { void fn() })
+      unsubState()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const markAsRead = useCallback((id: string) => store.markAsRead(id), [store])

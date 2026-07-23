@@ -5,11 +5,10 @@ import { useEffect, useCallback } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useChartStore } from "@/store/useChartStore"
 import { chartService } from "@/services/chartService"
-import { useWebSocket } from "./useWebSocket"
+import { getWSManager } from "@/services/websocketManager"
 
 export function useChartData() {
   const { symbol, interval, setCandles, setLoading, setError } = useChartStore()
-  const ws = useWebSocket()
 
   const { isLoading, error } = useQuery({
     queryKey: ["candles", symbol, interval],
@@ -29,6 +28,7 @@ export function useChartData() {
   }, [error, setError])
 
   useEffect(() => {
+    const ws = getWSManager()
     const handler = (msg: any) => {
       const payload = msg.payload || msg
       if (payload.symbol === symbol) {
@@ -40,13 +40,22 @@ export function useChartData() {
         })
       }
     }
-    ws.on("market_data", handler)
-    return () => ws.off("market_data")
-  }, [symbol, ws])
+    const unsub = ws.onEvent("market_data", handler)
+    return () => { unsub() }
+  }, [symbol])
 
   const refetch = useCallback(() => {
-    chartService.fetchCandles(symbol, interval, 5).then((d) => setCandles(d.candles || []))
-  }, [symbol, interval, setCandles])
+    setLoading(true)
+    chartService.fetchCandles(symbol, interval, 5)
+      .then((d) => {
+        setCandles(d.candles || [])
+        setLoading(false)
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Failed to fetch")
+        setLoading(false)
+      })
+  }, [symbol, interval, setCandles, setLoading, setError])
 
   return { isLoading, refetch }
 }

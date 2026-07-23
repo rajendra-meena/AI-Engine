@@ -2,7 +2,6 @@
 
 import { useChartStore } from "@/store/useChartStore"
 import { Play, Pause, SkipBack, SkipForward, RotateCcw } from "lucide-react"
-import { cn } from "@/lib/utils"
 
 interface ReplayOverlayProps {
   isPlaying: boolean

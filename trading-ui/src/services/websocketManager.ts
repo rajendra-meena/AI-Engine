@@ -88,6 +88,7 @@ class WebSocketManager {
   private _reconnect(reason: string) {
     this._ws?.close()
     this._monitor.recordReconnect(reason)
+    this._setState("reconnecting")
     this._ws = null
     this._connect()
   }

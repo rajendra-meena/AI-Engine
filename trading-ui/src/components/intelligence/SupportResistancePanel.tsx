@@ -6,7 +6,6 @@ import { MetricCard } from "./MetricCard"
 import { ProgressBar } from "./RiskBadge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { AlertCircle, RefreshCw } from "lucide-react"
-import { cn } from "@/lib/utils"
 
 export function SupportResistancePanel() {
   const { data, isLoading, error, refetch } = useSR()

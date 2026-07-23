@@ -113,7 +113,7 @@ export const tradePlannerService = {
       }))
 
     const firstTarget = profitTargets.length > 0 ? profitTargets[0].target : null
-    const expectedRR = firstTarget ? (Math.abs(firstTarget - entryPrice) / riskPoints) * 100 : 0
+    const expectedRR = firstTarget ? (Math.abs(firstTarget - entryPrice) / riskPoints) : 0
     const netRR = expectedRR * 0.85 // Rough adjustment for fees/slippage
 
     return { expectedRR: Math.round(expectedRR * 10) / 10, profitTargets, netRR: Math.round(netRR * 10) / 10 }

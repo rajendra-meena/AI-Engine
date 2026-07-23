@@ -4,9 +4,8 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useTheme } from "next-themes"
 import { useEffect, useState } from "react"
-import { Brain, BarChart3, Activity, Target, Settings, Briefcase, BrainCircuit, LayoutDashboard, GitBranch, FlaskConical, Cpu, Radio, Sun, Moon } from "lucide-react"
+import { Brain, BarChart3, Activity, Settings, Briefcase, LayoutDashboard, GitBranch, Cpu, Radio, Sun, Moon } from "lucide-react"
 import { NotificationCenter } from "@/components/notifications/NotificationCenter"
-import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 
 const NAV_ITEMS = [

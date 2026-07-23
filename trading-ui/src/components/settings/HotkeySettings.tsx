@@ -13,7 +13,7 @@ interface Props {
 }
 
 export function HotkeySettingsPanel({ hotkeys, onUpdate, onReset }: Props) {
-  const conflicts = useMemo(() => settingsService.detectConflicts(), [hotkeys])
+  const conflicts = useMemo(() => settingsService.detectConflicts(), [])
 
   const grouped = useMemo(() => {
     const groups: Record<string, HotkeyEntry[]> = {}
