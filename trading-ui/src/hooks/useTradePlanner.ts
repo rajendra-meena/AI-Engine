@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useMemo } from "react"
+import { useCallback, useRef, useEffect } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { decisionService } from "@/services/decisionService"
 import { structureService } from "@/services/structureService"
@@ -15,9 +15,26 @@ import { tradePlannerService, type TradePlanInput } from "@/services/tradePlanne
  * position sizing into the TradePlannerStore.
  *
  * Polls all backend services at 30s intervals.
+ *
+ * IMPORTANT: Store mutations use getState() + refs to avoid cascading
+ * re-render loops. Never put the full Zustand store object in a dependency
+ * array of an effect/memo that also mutates the store.
  */
 export function useTradePlanner(symbol = "NIFTY 50", interval = "15m") {
-  const store = useTradePlannerStore()
+  // Use individual selectors — never the full store object
+  const position = useTradePlannerStore((s) => s.position)
+  const risk = useTradePlannerStore((s) => s.risk)
+  const reward = useTradePlannerStore((s) => s.reward)
+  const execution = useTradePlannerStore((s) => s.execution)
+  const checklist = useTradePlannerStore((s) => s.checklist)
+  const timeline = useTradePlannerStore((s) => s.timeline)
+  const reasoning = useTradePlannerStore((s) => s.reasoning)
+  const warnings = useTradePlannerStore((s) => s.warnings)
+  const capital = useTradePlannerStore((s) => s.capital)
+  const riskPercent = useTradePlannerStore((s) => s.riskPercent)
+  const lotSize = useTradePlannerStore((s) => s.lotSize)
+  const brokerChargesPercent = useTradePlannerStore((s) => s.brokerChargesPercent)
+  const slippagePoints = useTradePlannerStore((s) => s.slippagePoints)
 
   /* ── Fetch all backend data ── */
   const { data: decisionData } = useQuery({
@@ -55,25 +72,40 @@ export function useTradePlanner(symbol = "NIFTY 50", interval = "15m") {
     staleTime: 10_000,
   })
 
-  /* ── Process decision data into trade planner state ── */
+  // Track previous decision data to avoid redundant store updates
+  const prevDecisionRef = useRef<string | null>(null)
 
-  // Derive execution
-  useMemo(() => {
+  /* ── Sync backend data to store (only on meaningful changes) ── */
+  useEffect(() => {
+    const decisionKey = JSON.stringify(decisionData?.decision ?? "") + "|" + JSON.stringify(decisionData?.score ?? "")
+    if (decisionKey === prevDecisionRef.current) return
+    prevDecisionRef.current = decisionKey
+
+    // Only sync when decision data actually changes
     if (!decisionData) return
+
     const plan = (decisionData.trade_plan ?? {}) as TradePlanInput
-    const execution = tradePlannerService.calculateExecutionStatus(
+    const store = useTradePlannerStore.getState()
+
+    // Execution
+    const newExecution = tradePlannerService.calculateExecutionStatus(
       decisionData.decision,
       decisionData.score,
       decisionData.confidence,
       decisionData.risk_level,
       plan,
     )
-    store.setExecution(execution)
-  }, [decisionData, store])
+    store.setExecution(newExecution)
 
-  // Derive position sizing
-  useMemo(() => {
-    const plan = (decisionData?.trade_plan ?? {}) as TradePlanInput
+    // Risk
+    const newRisk = tradePlannerService.calculateRisk(
+      decisionData.risk_level,
+      decisionData.risk_score,
+      decisionData.max_risk_percent,
+    )
+    store.setRisk(newRisk)
+
+    // Position sizing
     const entryPrice =
       plan.entry_zone?.price ??
       plan.entry_zone?.top ??
@@ -91,101 +123,66 @@ export function useTradePlanner(symbol = "NIFTY 50", interval = "15m") {
       store.slippagePoints,
     )
     store.setPosition(pos)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [decisionData, store.capital, store.riskPercent, store.lotSize, store.brokerChargesPercent, store.slippagePoints])
 
-  // Derive risk
-  useMemo(() => {
-    if (!decisionData) return
-    const risk = tradePlannerService.calculateRisk(
-      decisionData.risk_level,
-      decisionData.risk_score,
-      decisionData.max_risk_percent,
-    )
-    store.setRisk(risk)
-  }, [decisionData, store])
-
-  // Derive reward
-  useMemo(() => {
-    const plan = (decisionData?.trade_plan ?? {}) as TradePlanInput
-    const entryPrice =
-      plan.entry_zone?.price ??
-      plan.entry_zone?.top ??
-      plan.entry_zone?.bottom ??
-      null
-    const stoploss = plan.sl_zone?.price ?? null
+    // Reward
     const targets = plan.target_zones || []
-    const reward = tradePlannerService.calculateReward(entryPrice, stoploss, targets)
-    store.setReward(reward)
-  }, [decisionData, store])
+    const newReward = tradePlannerService.calculateReward(entryPrice, stoploss, targets)
+    store.setReward(newReward)
 
-  // Derive checklist
-  useMemo(() => {
-    const execution = useTradePlannerStore.getState().execution
-    const risk = useTradePlannerStore.getState().risk
+    // Reasoning + warnings
+    if (decisionData.reasoning) store.setReasoning(decisionData.reasoning)
+    if (decisionData.warnings) store.setWarnings(decisionData.warnings)
+  }, [decisionData])
+
+  // Checklist — separate effect since it depends on different data
+  useEffect(() => {
+    const store = useTradePlannerStore.getState()
     const checklist: ChecklistItemData[] = tradePlannerService.calculateChecklist(
       structureData ?? null,
       indicatorData ?? null,
       patternData ?? null,
       srData ?? null,
-      execution,
-      risk,
+      store.execution,
+      store.risk,
     )
     store.setChecklist(checklist)
-  }, [structureData, indicatorData, patternData, srData, store])
+  }, [structureData, indicatorData, patternData, srData])
 
-  // Derive timeline
-  useMemo(() => {
-    const execution = useTradePlannerStore.getState().execution
+  // Timeline — separate effect
+  useEffect(() => {
+    const store = useTradePlannerStore.getState()
     const now = new Date().toISOString()
-    const timeline: TimelineEvent[] = tradePlannerService.calculateTimeline(execution, now)
+    const timeline: TimelineEvent[] = tradePlannerService.calculateTimeline(store.execution, now)
     store.setTimeline(timeline)
-  }, [store])
-
-  // Reasoning + warnings
-  useMemo(() => {
-    if (decisionData?.reasoning) {
-      store.setReasoning(decisionData.reasoning)
-    }
-    if (decisionData?.warnings) {
-      store.setWarnings(decisionData.warnings)
-    }
-  }, [decisionData, store])
+  }, [execution])
 
   /* ── User actions ── */
 
-  const updateCapital = useCallback((capital: number) => store.setCapital(capital), [store])
-  const updateRiskPercent = useCallback((percent: number) => store.setRiskPercent(percent), [store])
-  const updateLotSize = useCallback((size: number) => store.setLotSize(size), [store])
-  const updateBrokerCharges = useCallback((percent: number) => store.setBrokerChargesPercent(percent), [store])
-  const updateSlippage = useCallback((points: number) => store.setSlippagePoints(points), [store])
+  const updateCapital = useCallback((v: number) => useTradePlannerStore.getState().setCapital(v), [])
+  const updateRiskPercent = useCallback((v: number) => useTradePlannerStore.getState().setRiskPercent(v), [])
+  const updateLotSize = useCallback((v: number) => useTradePlannerStore.getState().setLotSize(v), [])
+  const updateBrokerCharges = useCallback((v: number) => useTradePlannerStore.getState().setBrokerChargesPercent(v), [])
+  const updateSlippage = useCallback((v: number) => useTradePlannerStore.getState().setSlippagePoints(v), [])
 
   return {
-    /* state */
-    position: store.position,
-    risk: store.risk,
-    reward: store.reward,
-    execution: store.execution,
-    checklist: store.checklist,
-    timeline: store.timeline,
-    reasoning: store.reasoning,
-    warnings: store.warnings,
-
-    /* config */
-    capital: store.capital,
-    riskPercent: store.riskPercent,
-    lotSize: store.lotSize,
-    brokerChargesPercent: store.brokerChargesPercent,
-    slippagePoints: store.slippagePoints,
-
-    /* raw data */
+    position,
+    risk,
+    reward,
+    execution,
+    checklist,
+    timeline,
+    reasoning,
+    warnings,
+    capital,
+    riskPercent,
+    lotSize,
+    brokerChargesPercent,
+    slippagePoints,
     decision: decisionData,
     structure: structureData,
     indicators: indicatorData,
     patterns: patternData,
     sr: srData,
-
-    /* actions */
     updateCapital,
     updateRiskPercent,
     updateLotSize,
