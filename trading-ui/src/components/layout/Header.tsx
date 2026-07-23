@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation"
 import { Brain, Search, Sun, Moon, Bell, Settings, Menu, ChevronDown } from "lucide-react"
 import { useLayoutStore } from "@/store/useLayoutStore"
 import { useNotificationStore } from "@/store/useNotificationStore"
+import { NotificationDrawer } from "@/components/notifications/NotificationDrawer"
+import { ToastContainer } from "@/components/notifications/ToastContainer"
 import { ConnectionBadge } from "@/components/live/ConnectionBadge"
 import { ReplayBadge } from "@/components/live/ReplayBadge"
 import { cn } from "@/lib/utils"
@@ -78,6 +80,10 @@ export function Header() {
           </button>
         ))}
       </div>
+
+      {/* Notification drawer + toast rendered here so the bell in Header works */}
+      <NotificationDrawer />
+      <ToastContainer />
 
       <div className="ml-auto flex items-center gap-1">
         {/* Connection badge */}
