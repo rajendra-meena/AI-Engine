@@ -17,7 +17,7 @@ interface ChartHeaderProps {
   className?: string
 }
 
-const SYMBOLS = ["NIFTY 50", "BANK NIFTY", "SENSEX", "FIN NIFTY", "MIDCP NIFTY"]
+const SYMBOLS = ["NIFTY 50", "BANK NIFTY", "SENSEX"]
 const INTERVALS = ["1m", "3m", "5m", "15m", "30m", "60m", "4h", "1d"]
 
 export function ChartHeader({ chart, isFullscreen, onFullscreen, onDetach, onRemove, onSymbolChange, onIntervalChange, className }: ChartHeaderProps) {

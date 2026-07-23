@@ -67,7 +67,7 @@ export function ResearchDashboard() {
               <div><label className="text-[8px] text-muted-foreground block mb-0.5">Symbol</label>
                 <select value={store.config.symbol} onChange={(e) => store.setConfig({ symbol: e.target.value })}
                   className="w-full h-7 rounded border bg-muted/50 px-1.5 text-[10px] focus:outline-none">
-                  {["NIFTY 50", "BANK NIFTY", "SENSEX", "FIN NIFTY", "MIDCP NIFTY"].map((s) => <option key={s} value={s}>{s}</option>)}
+                  {["NIFTY 50", "BANK NIFTY", "SENSEX"].map((s) => <option key={s} value={s}>{s}</option>)}
                 </select></div>
               <div><label className="text-[8px] text-muted-foreground block mb-0.5">Interval</label>
                 <select value={store.config.interval} onChange={(e) => store.setConfig({ interval: e.target.value })}

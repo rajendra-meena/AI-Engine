@@ -19,7 +19,7 @@ import type { Candle } from "@/types"
 
 /* ─── Supported scan symbols ─── */
 
-export const SCAN_SYMBOLS = ["NIFTY 50", "BANK NIFTY", "SENSEX", "FIN NIFTY", "MIDCP NIFTY"]
+export const SCAN_SYMBOLS = ["NIFTY 50", "BANK NIFTY", "SENSEX"]
 
 /* ─── Scanner Service ─── */
 

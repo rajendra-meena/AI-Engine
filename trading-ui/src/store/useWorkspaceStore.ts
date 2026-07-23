@@ -83,7 +83,7 @@ const DEFAULT_TEMPLATES: WorkspaceTemplate[] = [
   { id: "scalping", name: "Scalping", layout: "4", description: "1m/3m charts for fast trading", presets: [{ symbol: "NIFTY 50", interval: "1m" }, { symbol: "BANK NIFTY", interval: "3m" }] },
   { id: "intraday", name: "Intraday", layout: "2v", description: "15m/30m daily trading", presets: [{ symbol: "NIFTY 50", interval: "15m" }, { symbol: "SENSEX", interval: "15m" }] },
   { id: "swing", name: "Swing", layout: "2h", description: "60m/4h multi-day", presets: [{ symbol: "NIFTY 50", interval: "60m" }, { symbol: "BANK NIFTY", interval: "60m" }] },
-  { id: "institutional", name: "Institutional", layout: "6", description: "Full analysis suite", presets: [{ symbol: "NIFTY 50", interval: "15m" }, { symbol: "BANK NIFTY", interval: "15m" }, { symbol: "FIN NIFTY", interval: "15m" }] },
+  { id: "institutional", name: "Institutional", layout: "6", description: "Full analysis suite", presets: [{ symbol: "NIFTY 50", interval: "15m" }, { symbol: "BANK NIFTY", interval: "15m" }] },
 ]
 
 const createDefaultChart = (position: number, symbol = "NIFTY 50", interval = "15m"): ChartConfig => ({

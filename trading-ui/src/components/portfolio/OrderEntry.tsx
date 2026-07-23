@@ -14,7 +14,7 @@ interface OrderEntryProps {
   className?: string
 }
 
-const SCAN_SYMBOLS = ["NIFTY 50", "BANK NIFTY", "SENSEX", "FIN NIFTY", "MIDCP NIFTY"]
+const SCAN_SYMBOLS = ["NIFTY 50", "BANK NIFTY", "SENSEX"]
 
 export function OrderEntry({ onPlaceOrder, disabled, className }: OrderEntryProps) {
   const [symbol, setSymbol] = useState("NIFTY 50")
