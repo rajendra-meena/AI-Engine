@@ -42,28 +42,21 @@ class MTFUnit:
 
         self._contexts[interval] = payload
 
-        # Only produce when we have at least the top 2 TFs
+        # Produce once we have at least one timeframe context available
         available = [tf for tf, c in self._contexts.items() if c is not None]
-        top_tfs = HIERARCHY[:2]
-        if not all(tf in available for tf in top_tfs):
+        if not available:
             return None
 
         alignment = AlignmentAnalyzer.evaluate(self._contexts)
         condition = ConditionAnalyzer.evaluate(alignment, self._contexts)
         permission_data = PermissionAnalyzer.evaluate(alignment, condition, self._contexts)
 
-        # Institutional bias from HTF
-        htf_ctx = self._contexts.get(HIERARCHY[0])
+        # Institutional bias from the highest available timeframe
+        top_available = min(available, key=lambda tf: HIERARCHY.index(tf))
+        htf_ctx = self._contexts.get(top_available)
         htf_bias = htf_ctx.get("overall_bias", "NEUTRAL") if htf_ctx else "NEUTRAL"
 
-        # Overall confidence: weighted average
-        total_w = 0.0
-        conf_score = 0.0
-        for tf in HIERARCHY:
-            ctx = self._contexts.get(tf)
-            if ctx:
-                w = EXECUTION_TF.get(tf.split("m")[0], 0.1)  # simplified
-                pass
+        # Overall confidence: weighted average across populated TFs
         confidences = [c.get("confidence", 0) or 0 for c in self._contexts.values() if c]
         avg_conf = int(sum(confidences) / len(confidences)) if confidences else 0
 
