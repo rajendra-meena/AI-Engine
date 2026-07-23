@@ -3,6 +3,7 @@
 import { useLayoutStore } from "@/store/useLayoutStore"
 import { cn } from "@/lib/utils"
 import { motion } from "framer-motion"
+import { useRouter } from "next/navigation"
 import {
   LayoutDashboard, TrendingUp, History, Target, Wallet, Star, BarChart3, Settings, Wifi, ChevronLeft,
 } from "lucide-react"
@@ -12,21 +13,23 @@ interface NavItem {
   id: string
   label: string
   icon: React.ReactNode
+  href: string
   shortcut?: string
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard className="w-4 h-4" /> },
-  { id: "live", label: "Live Trading", icon: <TrendingUp className="w-4 h-4" /> },
-  { id: "replay", label: "Replay", icon: <History className="w-4 h-4" /> },
-  { id: "backtest", label: "Backtest", icon: <Target className="w-4 h-4" /> },
-  { id: "paper", label: "Paper Trading", icon: <Wallet className="w-4 h-4" /> },
-  { id: "watchlist", label: "Watchlist", icon: <Star className="w-4 h-4" /> },
-  { id: "analytics", label: "Analytics", icon: <BarChart3 className="w-4 h-4" /> },
-  { id: "settings", label: "Settings", icon: <Settings className="w-4 h-4" /> },
+  { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard className="w-4 h-4" />, href: "/dashboard" },
+  { id: "live", label: "Live Trading", icon: <TrendingUp className="w-4 h-4" />, href: "/live" },
+  { id: "replay", label: "Replay", icon: <History className="w-4 h-4" />, href: "/workspace" },
+  { id: "backtest", label: "Backtest", icon: <Target className="w-4 h-4" />, href: "/backtest" },
+  { id: "paper", label: "Paper Trading", icon: <Wallet className="w-4 h-4" />, href: "/portfolio" },
+  { id: "watchlist", label: "Watchlist", icon: <Star className="w-4 h-4" />, href: "/portfolio" },
+  { id: "analytics", label: "Analytics", icon: <BarChart3 className="w-4 h-4" />, href: "/research" },
+  { id: "settings", label: "Settings", icon: <Settings className="w-4 h-4" />, href: "/settings" },
 ]
 
 export function Sidebar() {
+  const router = useRouter()
   const { sidebarOpen, sidebarWidth, activeNav, setActiveNav, toggleSidebar, setSidebarWidth } = useLayoutStore()
 
   const handleKeyDown = useCallback(
@@ -43,6 +46,11 @@ export function Sidebar() {
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
   }, [handleKeyDown])
+
+  const handleNavClick = useCallback((item: NavItem) => {
+    setActiveNav(item.id)
+    router.push(item.href)
+  }, [router, setActiveNav])
 
   return (
     <motion.aside
@@ -76,7 +84,7 @@ export function Sidebar() {
         {NAV_ITEMS.map((item) => (
           <button
             key={item.id}
-            onClick={() => setActiveNav(item.id)}
+            onClick={() => handleNavClick(item)}
             className={cn(
               "flex items-center gap-3 mx-2 px-3 py-2 rounded-md text-sm transition-colors",
               activeNav === item.id

@@ -2,7 +2,6 @@
 
 import React, { useState } from "react"
 import { ChevronDown, ChevronRight } from "lucide-react"
-import { motion, AnimatePresence } from "framer-motion"
 import { cn } from "@/lib/utils"
 
 interface PanelSectionProps {
@@ -27,19 +26,9 @@ export function PanelSection({ icon, title, defaultOpen = true, children, classN
         <span className="flex-1 text-left">{title}</span>
         {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
       </button>
-      <AnimatePresence initial={false}>
-        {open && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden"
-          >
-            <div className="px-3 pb-3 pt-1 text-xs text-muted-foreground">{children}</div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {open && (
+        <div className="px-3 pb-3 pt-1 text-xs text-muted-foreground">{children}</div>
+      )}
     </div>
   )
 }
