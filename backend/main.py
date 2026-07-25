@@ -45,6 +45,7 @@ from api.orchestrator import router as orchestrator_router, set_orchestrator
 from api.trades import router as trades_router
 from api.live import router as live_router
 from api.market_stream import router as market_stream_router
+from api.ai_analyze import router as ai_analyze_router, set_decision_service
 from api.kite import router as kite_router, set_provider_factory, set_kite_risk_engine
 from services.prediction_service import initialize as init_prediction_service
 from services.live_market_engine import LiveMarketDataEngine
@@ -200,6 +201,12 @@ async def lifespan(app: FastAPI):
     ai_decision_engine = AIDecisionEngine(event_bus)
     set_ai_decision_engine(ai_decision_engine)
     await ai_decision_engine.start()
+
+    # Initialize the AI Decision Service
+    from ai_decision.decision_service import DecisionService
+
+    decision_service = DecisionService(ai_decision_engine)
+    set_decision_service(decision_service)
 
     # Start the Multi-Timeframe Engine
     mtf_engine = MTFEngine(event_bus)
@@ -364,6 +371,7 @@ app.include_router(pattern_router)
 app.include_router(context_router)
 app.include_router(sr_router)
 app.include_router(ai_router)
+app.include_router(ai_analyze_router)
 app.include_router(mtf_router)
 app.include_router(tick_router)
 app.include_router(strategy_router)
