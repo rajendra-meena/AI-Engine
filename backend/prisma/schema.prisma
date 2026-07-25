@@ -60,7 +60,44 @@ enum PredictionStatus {
   EXPIRED
 }
 
-/// Users & Authentication
+enum LearningRecommendationStatus {
+  NEW
+  REVIEWING
+  APPROVED
+  REJECTED
+  IMPLEMENTED
+  ROLLED_BACK
+}
+
+enum MarketRegime {
+  TRENDING
+  RANGE
+  HIGH_VOLATILITY
+  LOW_VOLATILITY
+  RISK_ON
+  RISK_OFF
+  RECOVERY
+  DEFENSIVE
+}
+
+enum ErrorCategory {
+  WRONG_DIRECTION
+  FALSE_BREAKOUT
+  TREND_REVERSAL
+  LOW_LIQUIDITY
+  NEWS_SHOCK
+  UNEXPECTED_VOLATILITY
+  WEAK_MTF_ALIGNMENT
+  BAD_SUPPORT_RESISTANCE
+  PATTERN_FAILURE
+  AI_OVERCONFIDENCE
+  AI_UNDERCONFIDENCE
+  RISK_MODEL_FAILURE
+  EXECUTION_SLIPPAGE
+  DATA_QUALITY_ISSUE
+  UNKNOWN
+}
+
 model User {
   id             String       @id @default(cuid())
   email          String       @unique
@@ -93,7 +130,6 @@ model User {
   @@index([role])
 }
 
-/// Auth sessions
 model Session {
   id           String   @id @default(cuid())
   userId       String
@@ -110,7 +146,6 @@ model Session {
   @@index([expiresAt])
 }
 
-/// Device management
 model Device {
   id        String   @id @default(cuid())
   userId    String
@@ -125,7 +160,6 @@ model Device {
   @@index([userId])
 }
 
-/// Trades
 model Trade {
   id             String         @id @default(cuid())
   userId         String
@@ -157,10 +191,8 @@ model Trade {
   @@index([userId])
   @@index([symbol])
   @@index([openedAt])
-  @@index([status])
 }
 
-/// Orders
 model Order {
   id           String     @id @default(cuid())
   userId       String
@@ -193,7 +225,6 @@ model Order {
   @@index([brokerOrderId])
 }
 
-/// AI Predictions
 model Prediction {
   id              Int                  @id @default(autoincrement())
   userId          String?
@@ -221,7 +252,6 @@ model Prediction {
   @@index([createdAt])
 }
 
-/// AI Decision Log
 model AIDecision {
   id           String   @id @default(cuid())
   userId       String?
@@ -245,7 +275,6 @@ model AIDecision {
   @@index([createdAt])
 }
 
-/// Notifications
 model Notification {
   id        String   @id @default(cuid())
   userId    String?
@@ -266,7 +295,6 @@ model Notification {
   @@index([createdAt])
 }
 
-/// Portfolio
 model Portfolio {
   id            String  @id @default(cuid())
   userId        String  @unique
@@ -281,7 +309,6 @@ model Portfolio {
   user User @relation(fields: [userId], references: [id])
 }
 
-/// Watchlists
 model Watchlist {
   id        String   @id @default(cuid())
   userId    String
@@ -296,7 +323,6 @@ model Watchlist {
   @@index([userId])
 }
 
-/// Journal Entries
 model JournalEntry {
   id        String   @id @default(cuid())
   tradeId   String
@@ -314,7 +340,6 @@ model JournalEntry {
   @@index([tradeId])
 }
 
-/// Market Data Cache
 model MarketDataCache {
   id        String   @id @default(cuid())
   symbol    String
@@ -327,7 +352,6 @@ model MarketDataCache {
   @@index([expiresAt])
 }
 
-/// Scanner Results
 model ScannerResult {
   id        String   @id @default(cuid())
   symbol    String
@@ -345,7 +369,6 @@ model ScannerResult {
   @@index([createdAt])
 }
 
-/// Replay Sessions
 model ReplaySession {
   id           String   @id @default(cuid())
   userId       String?
@@ -362,7 +385,6 @@ model ReplaySession {
   @@index([createdAt])
 }
 
-/// Backtest Results
 model BacktestResult {
   id             String   @id @default(cuid())
   userId         String?
@@ -383,7 +405,6 @@ model BacktestResult {
   @@index([createdAt])
 }
 
-/// Audit Logs
 model AuditLog {
   id        String   @id @default(cuid())
   userId    String?
@@ -401,7 +422,6 @@ model AuditLog {
   @@index([createdAt])
 }
 
-/// Settings
 model UserSettings {
   id        String   @id @default(cuid())
   userId    String   @unique
@@ -412,7 +432,6 @@ model UserSettings {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
-/// Analytics Snapshots
 model AnalyticsSnapshot {
   id        String   @id @default(cuid())
   userId    String?
@@ -424,4 +443,262 @@ model AnalyticsSnapshot {
   @@index([userId])
   @@index([type])
   @@index([createdAt])
+}
+
+/// ── AI Learning & Trade Feedback Loop (Phase 24) ──
+
+model PredictionJournal {
+  id                 String   @id @default(cuid())
+  symbol             String
+  exchange           String   @default("NSE")
+  interval           String
+  timestamp          DateTime @default(now())
+  decision           String
+  direction          String?
+  score              Int
+  confidence         Int
+  riskScore          Int?
+  riskLevel          String?
+  entryPrice         Float?
+  stopLoss           Float?
+  target             Float?
+  riskReward         Float?
+  strategyId         String?
+  modelId            String?
+  modelVersion       String?
+  marketRegime       String?
+  trend              String?
+  marketPhase        String?
+  institutionalBias  String?
+  mtfAlignment       String?
+  volatility         Float?
+  momentum           Float?
+  featureSnapshot    Json?
+  indicatorSnapshot  Json?
+  patternSnapshot    Json?
+  structureSnapshot  Json?
+  srSnapshot         Json?
+  newsContext        Json?
+  marketContext      Json?
+  regime             MarketRegime?
+  outcome            PredictionOutcome?
+  tradeFeedback      TradeFeedback?
+  blockedTrade       BlockedTrade?
+  userId             String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([symbol])
+  @@index([timestamp])
+  @@index([score])
+  @@index([confidence])
+  @@index([strategyId])
+  @@index([modelId])
+  @@index([regime])
+}
+
+model PredictionOutcome {
+  id                    String        @id @default(cuid())
+  predictionId          String        @unique
+  outcome5m             String?
+  outcome15m            String?
+  outcome30m            String?
+  outcome60m            String?
+  outcomeSession        String?
+  outcomeEod            String?
+  maxFavorableExcursion Float?
+  maxAdverseExcursion   Float?
+  targetHit             Boolean?
+  stopLossHit           Boolean?
+  timeExit              Boolean?
+  manualExit            Boolean?
+  expired               Boolean?
+  actualDirection       String?
+  actualReturn          Float?
+  maximumReturn         Float?
+  maximumDrawdown       Float?
+  errorCategory         ErrorCategory?
+  errorReason           String?
+  prediction PredictionJournal @relation(fields: [predictionId], references: [id], onDelete: Cascade)
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  @@index([predictionId])
+  @@index([errorCategory])
+}
+
+model TradeFeedback {
+  id               String   @id @default(cuid())
+  predictionId     String   @unique
+  entrySlippage    Float?
+  exitSlippage     Float?
+  commission       Float?
+  taxes            Float?
+  brokerage        Float?
+  grossPnl         Float?
+  netPnl           Float?
+  plannedRisk      Float?
+  actualRisk       Float?
+  plannedRr        Float?
+  actualRr         Float?
+  holdingDuration  Int?
+  exitReason       String?
+  riskFirewallResult Json?
+  strategyResult     Json?
+  modelResult        Json?
+  prediction PredictionJournal @relation(fields: [predictionId], references: [id], onDelete: Cascade)
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  @@index([predictionId])
+  @@index([grossPnl])
+}
+
+model BlockedTrade {
+  id                     String   @id @default(cuid())
+  predictionId           String   @unique
+  blockedBy              String
+  reason                 String
+  riskScore              Int?
+  wouldHaveBeenProfitable Boolean?
+  hypotheticalReturn      Float?
+  hypotheticalRr          Float?
+  actualMarketMove        Float?
+  prediction PredictionJournal @relation(fields: [predictionId], references: [id], onDelete: Cascade)
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  @@index([predictionId])
+  @@index([blockedBy])
+}
+
+model LearningRecommendation {
+  id               String                        @id @default(cuid())
+  title            String
+  finding          String
+  evidence         String
+  sampleCount      Int
+  confidence       Float
+  expectedImpact   String
+  risk             String
+  recommendation   String
+  action           String?
+  category         String
+  status           LearningRecommendationStatus   @default(NEW)
+  approvedAt       DateTime?
+  rejectedAt       DateTime?
+  rejectionReason  String?
+  implementedAt    DateTime?
+  rolledBackAt     DateTime?
+  userId           String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([status])
+  @@index([category])
+  @@index([createdAt])
+}
+
+model ModelEvaluation {
+  id               String   @id @default(cuid())
+  modelId          String
+  modelName        String
+  modelVersion     Int
+  modelType        String   @default("challenger")
+  accuracy         Float?
+  precision        Float?
+  recall           Float?
+  f1Score          Float?
+  sharpeRatio      Float?
+  winRate          Float?
+  profitFactor     Float?
+  maxDrawdown      Float?
+  calibration      Float?
+  oosAccuracy      Float?
+  oosSharpe        Float?
+  oosWinRate       Float?
+  regimePerformance Json?
+  trainedAt        DateTime?
+  evaluatedAt      DateTime?
+  createdAt        DateTime @default(now())
+
+  @@index([modelId])
+  @@index([modelType])
+  @@index([createdAt])
+}
+
+model CalibrationBucket {
+  id               String   @id @default(cuid())
+  bucket           String   @unique
+  bucketMin        Float
+  bucketMax        Float
+  totalPredictions Int      @default(0)
+  correctCount     Int      @default(0)
+  actualAccuracy   Float?
+  averageConfidence Float?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([bucketMin])
+}
+
+model FeatureObservation {
+  id                   String   @id @default(cuid())
+  featureName          String
+  importance           Float?
+  correlationWithOutcome Float?
+  positiveRate         Float?
+  negativeRate         Float?
+  winRateWhenAligned   Float?
+  winRateWhenConflicting Float?
+  sampleCount          Int      @default(0)
+  driftScore           Float?
+  observationDate      DateTime @default(now())
+
+  @@index([featureName])
+  @@index([importance])
+  @@index([observationDate])
+}
+
+model ShadowPrediction {
+  id                    String   @id @default(cuid())
+  symbol                String
+  interval              String
+  timestamp             DateTime @default(now())
+  championDecision      String?
+  championScore         Int?
+  championConfidence    Int?
+  challengerDecision    String?
+  challengerScore       Int?
+  challengerConfidence  Int?
+  actualOutcome         String?
+  actualReturn          Float?
+  winner                String?
+  performanceDiff       Float?
+  modelId               String?
+  createdAt             DateTime @default(now())
+
+  @@index([symbol])
+  @@index([timestamp])
+  @@index([winner])
+  @@index([modelId])
+}
+
+model RegimePerformance {
+  id               String        @id @default(cuid())
+  regime           MarketRegime
+  totalPredictions Int           @default(0)
+  totalTrades      Int           @default(0)
+  winRate          Float?
+  averageReturn    Float?
+  profitFactor     Float?
+  sharpeRatio      Float?
+  maxDrawdown      Float?
+  confidenceAccuracy Float?
+  observationDate  DateTime      @default(now())
+
+  @@unique([regime, observationDate])
+  @@index([regime])
 }
