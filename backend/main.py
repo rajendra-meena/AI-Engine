@@ -87,6 +87,7 @@ async def lifespan(app: FastAPI):
 
     # Start the Market Data Service
     from services.market_data_service import MarketDataService
+
     market_service = MarketDataService()
 
     # Start the Tick Engine
@@ -156,6 +157,7 @@ async def lifespan(app: FastAPI):
 
     # Create the Replay Engine
     from replay.engine import ReplayEngine
+
     replay_engine = ReplayEngine(market_service, event_bus)
     service_locator.replay_engine = replay_engine
     set_replay_engine(replay_engine)
@@ -170,11 +172,14 @@ async def lifespan(app: FastAPI):
             seed_candles = data.get("candles", [])
             if seed_candles:
                 from core.event_model import Event as BusEvent
+
                 for sc in seed_candles:
                     candle_payload = {
-                        "symbol": seed_symbol, "interval": "15m",
+                        "symbol": seed_symbol,
+                        "interval": "15m",
                         "candle": {
-                            "symbol": seed_symbol, "interval": "15m",
+                            "symbol": seed_symbol,
+                            "interval": "15m",
                             "time": sc.get("time", ""),
                             "open": sc.get("open", 0),
                             "high": sc.get("high", 0),
@@ -184,7 +189,9 @@ async def lifespan(app: FastAPI):
                             "is_closed": True,
                         },
                     }
-                    ev = BusEvent(type="candle_closed", source="bootstrap", payload=candle_payload)
+                    ev = BusEvent(
+                        type="candle_closed", source="bootstrap", payload=candle_payload
+                    )
                     if indicator_engine and indicator_engine._running:
                         await indicator_engine._on_candle_closed(ev)
                     if market_structure_engine and market_structure_engine._running:
@@ -196,21 +203,31 @@ async def lifespan(app: FastAPI):
                 if sr_engine and sr_engine._running:
                     ind_snap = (
                         indicator_engine.latest_snapshot(seed_symbol, "15m")
-                        if indicator_engine else None
+                        if indicator_engine
+                        else None
                     )
                     struct_snap = (
                         market_structure_engine.latest_snapshot(seed_symbol, "15m")
-                        if market_structure_engine else None
+                        if market_structure_engine
+                        else None
                     )
                     if ind_snap:
                         payload = {"symbol": seed_symbol, **ind_snap}
                         await sr_engine._on_indicator(
-                            BusEvent(type="indicators_updated", source="bootstrap", payload=payload)
+                            BusEvent(
+                                type="indicators_updated",
+                                source="bootstrap",
+                                payload=payload,
+                            )
                         )
                     if struct_snap:
                         payload = {"symbol": seed_symbol, **struct_snap}
                         await sr_engine._on_structure(
-                            BusEvent(type="structure_updated", source="bootstrap", payload=payload)
+                            BusEvent(
+                                type="structure_updated",
+                                source="bootstrap",
+                                payload=payload,
+                            )
                         )
                     await sr_engine._on_candle(ev)
 
@@ -301,6 +318,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
 # ── Expose global services for future modules ──
 
+
 def get_event_bus() -> EventBus:
     """Return the global Event Bus instance. Used by future modules."""
     return event_bus
@@ -332,4 +350,5 @@ def get_websocket_gateway() -> WebSocketGateway:
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
