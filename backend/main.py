@@ -52,6 +52,7 @@ from api.paper import router as paper_router
 from api.performance import router as performance_router
 from api.backtest import router as backtest_router, set_backtest_runner
 from api.governance import router as governance_router
+from api.live_readiness import router as readiness_router
 from api.runtime import router as runtime_router
 from api.backtest_validation import router as backtest_validation_router
 from api.kite import router as kite_router, set_provider_factory, set_kite_risk_engine
@@ -413,6 +414,8 @@ app.include_router(backtest_router)
 app.include_router(backtest_validation_router)
 app.include_router(governance_router)
 app.include_router(runtime_router)
+app.include_router(readiness_router)
+app.include_router(readiness_router)
 app.include_router(mtf_router)
 app.include_router(tick_router)
 app.include_router(strategy_router)
