@@ -40,6 +40,15 @@ from live.canary_authorization import (
 )
 from live.canary_precheck import CanaryPreCheck, CanaryPreCheckResult
 from live.canary_lifecycle import CanaryLifecycleManager, CanaryLifecycleError
+from live.canary_evaluation import (
+    CanaryEvaluationEngine, CanaryEvaluationReport, EvaluationClassification,
+    EvaluationCheck, CategoryResult,
+)
+from live.rollout_models import (
+    RolloutGovernanceReport, RolloutGovernanceState,
+    HumanReviewDecision, MultiCanaryTracker,
+)
+from live.rollout_governance import RolloutGovernanceEngine
 from live.execution_controller import Phase46ExecutionController, ExecutionResult
 
 __all__ = [
@@ -71,5 +80,10 @@ __all__ = [
     "CANARY_COMPLETED", "CANARY_FAILED", "CANARY_EXPIRED",
     "CanaryPreCheck", "CanaryPreCheckResult",
     "CanaryLifecycleManager", "CanaryLifecycleError",
+    "CanaryEvaluationEngine", "CanaryEvaluationReport", "EvaluationClassification",
+    "EvaluationCheck", "CategoryResult",
+    "RolloutGovernanceReport", "RolloutGovernanceState",
+    "HumanReviewDecision", "MultiCanaryTracker",
+    "RolloutGovernanceEngine",
     "Phase46ExecutionController", "ExecutionResult",
 ]
