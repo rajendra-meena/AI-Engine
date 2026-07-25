@@ -30,6 +30,16 @@ from live.position_reconciliation import LivePositionReconciliation, PositionRec
 from live.execution_limits import ExecutionRiskLimiter, LimitsConfig, LimitCheckResult
 from live.emergency_cancel import EmergencyCancelManager, EmergencyCancelResult
 from live.canary import CanaryExecutionManager, CanaryConfig, CanaryResult
+from live.canary_authorization import (
+    CanaryAuthorization, CanaryAuthState, AuthStateTransition,
+    CANARY_AUTH_REQUESTED, CANARY_AUTH_APPROVED, CANARY_ARMED,
+    CANARY_PRECHECK_PASSED, CANARY_PRECHECK_BLOCKED,
+    CANARY_EXECUTION_STARTED, CANARY_ORDER_SUBMITTED,
+    CANARY_ORDER_FILLED, CANARY_ORDER_REJECTED, CANARY_ORDER_UNKNOWN,
+    CANARY_COMPLETED, CANARY_FAILED, CANARY_EXPIRED,
+)
+from live.canary_precheck import CanaryPreCheck, CanaryPreCheckResult
+from live.canary_lifecycle import CanaryLifecycleManager, CanaryLifecycleError
 from live.execution_controller import Phase46ExecutionController, ExecutionResult
 
 __all__ = [
@@ -53,5 +63,13 @@ __all__ = [
     "ExecutionRiskLimiter", "LimitsConfig", "LimitCheckResult",
     "EmergencyCancelManager", "EmergencyCancelResult",
     "CanaryExecutionManager", "CanaryConfig", "CanaryResult",
+    "CanaryAuthorization", "CanaryAuthState", "AuthStateTransition",
+    "CANARY_AUTH_REQUESTED", "CANARY_AUTH_APPROVED", "CANARY_ARMED",
+    "CANARY_PRECHECK_PASSED", "CANARY_PRECHECK_BLOCKED",
+    "CANARY_EXECUTION_STARTED", "CANARY_ORDER_SUBMITTED",
+    "CANARY_ORDER_FILLED", "CANARY_ORDER_REJECTED", "CANARY_ORDER_UNKNOWN",
+    "CANARY_COMPLETED", "CANARY_FAILED", "CANARY_EXPIRED",
+    "CanaryPreCheck", "CanaryPreCheckResult",
+    "CanaryLifecycleManager", "CanaryLifecycleError",
     "Phase46ExecutionController", "ExecutionResult",
 ]
