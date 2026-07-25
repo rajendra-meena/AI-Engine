@@ -6,21 +6,18 @@ import { useRouter, usePathname } from "next/navigation"
 import { Brain, Search, Sun, Moon, Settings, Menu, ChevronDown } from "lucide-react"
 import { useLayoutStore } from "@/store/useLayoutStore"
 import { useMarketStore } from "@/store/useMarketStore"
+import { useChartStore } from "@/store/useChartStore"
 import { useNotificationStore } from "@/store/useNotificationStore"
 import { NotificationBell } from "@/components/notifications/NotificationBell"
 import { NotificationDrawer } from "@/components/notifications/NotificationDrawer"
 import { ToastContainer } from "@/components/notifications/ToastContainer"
 import { ConnectionBadge } from "@/components/live/ConnectionBadge"
 import { ReplayBadge } from "@/components/live/ReplayBadge"
-import { cn } from "@/lib/utils"
-
 const SYMBOLS = [
   { label: "NIFTY 50", value: "NIFTY 50" },
   { label: "BANKNIFTY", value: "BANKNIFTY" },
   { label: "SENSEX", value: "SENSEX" },
 ]
-
-const TIMEFRAMES = ["1m", "3m", "5m", "15m", "30m", "60m"]
 
 export function Header() {
   const router = useRouter()
@@ -32,8 +29,7 @@ export function Header() {
   const toggleDrawer = useNotificationStore((s) => s.toggleDrawer)
   const selectedSymbol = useMarketStore((s) => s.selectedSymbol)
   const setSelectedSymbol = useMarketStore((s) => s.setSelectedSymbol)
-  const selectedInterval = useMarketStore((s) => s.selectedInterval)
-  const setSelectedInterval = useMarketStore((s) => s.setSelectedInterval)
+  const setChartSymbol = useChartStore((s) => s.setSymbol)
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMounted(true) }, [])
 
@@ -70,7 +66,10 @@ export function Header() {
         <>
           <select
             value={selectedSymbol}
-            onChange={(e) => setSelectedSymbol(e.target.value)}
+            onChange={(e) => {
+              setSelectedSymbol(e.target.value)
+              setChartSymbol(e.target.value)
+            }}
             className="h-7 rounded-md border bg-muted/50 px-2 text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           >
             {SYMBOLS.map((s) => (
