@@ -1,6 +1,7 @@
 """Production Reliability, Recovery & 24/7 Operations package.
 
 Phase 50: Watchdogs, health monitoring, crash recovery, persistence, alerts.
+Phase 51: Observability, incident management, runbooks, metrics.
 """
 
 from ops.operational_state import OperationalState, validate_op_state_transition
@@ -15,6 +16,12 @@ from ops.recovery_manager import RecoveryManager
 from ops.daily_reconciliation import DailyReconciliationEngine, DailyReconciliationReport
 from ops.disaster_recovery import DisasterRecoveryManager
 from ops.config_integrity import ConfigIntegrityMonitor
+from ops.event_bus import OperationalEventBus, OperationalEvent
+from ops.severity_engine import SeverityEngine, SeverityTier
+from ops.incident_manager import IncidentManager, Incident, IncidentStatus
+from ops.incident_correlator import IncidentCorrelator
+from ops.runbooks import RunbookEngine, Runbook
+from ops.metrics import OperationalMetrics
 
 __all__ = [
     "OperationalState", "validate_op_state_transition",
@@ -29,4 +36,10 @@ __all__ = [
     "DailyReconciliationEngine", "DailyReconciliationReport",
     "DisasterRecoveryManager",
     "ConfigIntegrityMonitor",
+    "OperationalEventBus", "OperationalEvent",
+    "SeverityEngine", "SeverityTier",
+    "IncidentManager", "Incident", "IncidentStatus",
+    "IncidentCorrelator",
+    "RunbookEngine", "Runbook",
+    "OperationalMetrics",
 ]
