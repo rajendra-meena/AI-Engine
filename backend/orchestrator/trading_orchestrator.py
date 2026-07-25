@@ -26,6 +26,7 @@ from orchestrator.decision_context import (
 from risk.trade_validator import TradeIntent
 from risk.risk_engine import RiskEngine
 from learning import integration as lri
+from trading.trade_lifecycle import TradeLifecycleManager
 from utils.logger import log_info, log_warn, log_error
 
 

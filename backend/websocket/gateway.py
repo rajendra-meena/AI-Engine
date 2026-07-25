@@ -49,6 +49,7 @@ from core.events import (
 )
 from replay.events import FORWARDED_REPLAY_EVENTS
 from tick.events import FORWARDED_TICK_EVENTS
+from trading.lifecycle_events import EVENT_CHANNEL_MAP as TRADE_EVENTS
 from core.symbols import is_valid_symbol
 from utils.logger import log_info, log_warn, log_error
 
@@ -68,9 +69,10 @@ _FORWARDED_EVENTS: dict[str, str] = {
     SIGNAL_UPDATED: "signals",
     AI_DECISION: "ai",
 }
-# Merge replay + tick events into the forward map
+# Merge replay + tick + trade events into the forward map
 _FORWARDED_EVENTS.update(FORWARDED_REPLAY_EVENTS)
 _FORWARDED_EVENTS.update(FORWARDED_TICK_EVENTS)
+_FORWARDED_EVENTS.update(TRADE_EVENTS)
 
 
 class WebSocketGateway:
