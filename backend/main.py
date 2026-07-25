@@ -42,6 +42,7 @@ from api.risk import router as risk_router, set_risk_engine
 from api.learning import router as learning_router
 from api.orchestrator import router as orchestrator_router, set_orchestrator
 from api.trades import router as trades_router
+from api.live import router as live_router
 from api.kite import router as kite_router, set_provider_factory, set_kite_risk_engine
 from services.prediction_service import initialize as init_prediction_service
 from services.live_market_engine import LiveMarketDataEngine
@@ -352,6 +353,7 @@ app.include_router(risk_router)
 app.include_router(learning_router)
 app.include_router(orchestrator_router)
 app.include_router(trades_router)
+app.include_router(live_router)
 
 
 # ── WebSocket endpoint ──

@@ -26,6 +26,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "paper", label: "Paper Trading", icon: <Wallet className="w-4 h-4" />, href: "/portfolio" },
   { id: "strategy", label: "Strategies", icon: <GitBranch className="w-4 h-4" />, href: "/strategy" },
   { id: "intelligence", label: "Intelligence", icon: <Radio className="w-4 h-4" />, href: "/intelligence" },
+  { id: "live-control", label: "Live Control", icon: <Activity className="w-4 h-4" />, href: "/live-control" },
   { id: "orchestrator", label: "Orchestrator", icon: <Activity className="w-4 h-4" />, href: "/orchestrator" },
   { id: "ml", label: "ML", icon: <Cpu className="w-4 h-4" />, href: "/ml" },
   { id: "learning", label: "AI Learning", icon: <Brain className="w-4 h-4" />, href: "/learning" },
