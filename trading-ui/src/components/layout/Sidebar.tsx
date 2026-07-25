@@ -27,6 +27,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "strategy", label: "Strategies", icon: <GitBranch className="w-4 h-4" />, href: "/strategy" },
   { id: "intelligence", label: "Intelligence", icon: <Radio className="w-4 h-4" />, href: "/intelligence" },
   { id: "paper-trading", label: "Paper Trading", icon: <Wallet className="w-4 h-4" />, href: "/paper-trading" },
+  { id: "performance", label: "Performance", icon: <BarChart3 className="w-4 h-4" />, href: "/performance" },
   { id: "execution", label: "Execution", icon: <Zap className="w-4 h-4" />, href: "/execution" },
   { id: "live-control", label: "Live Control", icon: <Activity className="w-4 h-4" />, href: "/live-control" },
   { id: "orchestrator", label: "Orchestrator", icon: <Activity className="w-4 h-4" />, href: "/orchestrator" },
@@ -141,4 +142,5 @@ export function Sidebar() {
     </motion.aside>
   )
 }
+
 
