@@ -26,6 +26,7 @@ export function Header() {
   const pathname = usePathname()
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
+  const [clientPath, setClientPath] = useState("")
   const toggleSidebar = useLayoutStore((s) => s.toggleSidebar)
   const unreadCount = useNotificationStore((s) => s.unreadCount)
   const toggleDrawer = useNotificationStore((s) => s.toggleDrawer)
@@ -35,7 +36,7 @@ export function Header() {
   const userId = useBrokerStore((s) => s.user_id)
   const displayLabel = userId || useBrokerStore((s) => s.user_name)
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { setMounted(true) }, [])
+  useEffect(() => { setMounted(true); setClientPath(pathname || "") }, [pathname])
 
   return (
     <header className="flex h-14 items-center gap-3 border-b bg-card px-4 shrink-0" role="banner">
@@ -66,7 +67,7 @@ export function Header() {
       </div>
 
       {/* Symbol — Dashboard only */}
-      {pathname === "/dashboard" && (
+      {mounted && clientPath === "/dashboard" && (
         <>
           <select
             value={selectedSymbol}
