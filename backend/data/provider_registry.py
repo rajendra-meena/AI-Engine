@@ -42,13 +42,13 @@ REGISTRY: list[ProviderRegistration] = [
     ),
     # ── Future providers (placeholders) ──
     ProviderRegistration(
-        name="kite",
+        name="zerodha",
         display_name="Zerodha Kite",
         provider_type=ProviderType.BROKER,
         description="Zerodha Kite Connect API. Requires API key and access token.",
         requires_api_key=True,
         requires_websocket=True,
-        is_active=False,
+        is_active=True,
     ),
     ProviderRegistration(
         name="angel",

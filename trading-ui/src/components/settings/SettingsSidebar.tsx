@@ -1,7 +1,7 @@
 "use client"
 
 import { cn } from "@/lib/utils"
-import { Settings, Palette, BarChart3, Activity, Layers, ClipboardList, Shield, Repeat, Search, Bell, Briefcase, Keyboard, Layout, Download, Info } from "lucide-react"
+import { Settings, Palette, BarChart3, Activity, Layers, ClipboardList, Shield, Repeat, Search, Bell, Briefcase, Keyboard, Layout, Download, Info, Wifi } from "lucide-react"
 import { Search as SearchIcon } from "lucide-react"
 
 interface SettingsSidebarProps {
@@ -17,6 +17,7 @@ const SECTIONS = [
   { id: "chart", label: "Chart", icon: BarChart3 },
   { id: "indicators", label: "Indicators", icon: Activity },
   { id: "overlays", label: "Overlays", icon: Layers },
+  { id: "broker", label: "Broker", icon: Wifi },
   { id: "tradePlanner", label: "Trade Planner", icon: ClipboardList },
   { id: "risk", label: "Risk Management", icon: Shield },
   { id: "replay", label: "Replay", icon: Repeat },

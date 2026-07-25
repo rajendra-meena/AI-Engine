@@ -16,6 +16,7 @@ import { PortfolioPrefsPanel } from "./PortfolioPrefsSettings"
 import { HotkeySettingsPanel } from "./HotkeySettings"
 import { BackupRestorePanel } from "./BackupRestore"
 import { AboutSystemPanel } from "./AboutSystem"
+import { BrokerSettingsPanel } from "./BrokerSettings"
 import { Settings } from "lucide-react"
 
 export function SettingsPage() {
@@ -28,6 +29,7 @@ export function SettingsPage() {
       case "chart": return <ChartSettingsPanel settings={store.chart} onUpdate={store.updateChart} />
       case "indicators": return <IndicatorSettingsPanel settings={store.indicators} onUpdate={store.updateIndicators} />
       case "overlays": return <OverlaySettingsPanel settings={store.overlays} onUpdate={store.updateOverlays} />
+      case "broker": return <BrokerSettingsPanel />
       case "tradePlanner": return <TradePlannerSettingsPanel settings={store.tradePlanner} onUpdate={store.updateTradePlanner} />
       case "risk": return <RiskSettingsPanel settings={store.risk} onUpdate={store.updateRisk} />
       case "replay": return <ReplaySettingsPanel settings={store.replay} onUpdate={store.updateReplay} />

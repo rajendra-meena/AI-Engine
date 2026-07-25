@@ -12,6 +12,7 @@ import { NotificationBell } from "@/components/notifications/NotificationBell"
 import { NotificationDrawer } from "@/components/notifications/NotificationDrawer"
 import { ToastContainer } from "@/components/notifications/ToastContainer"
 import { ConnectionBadge } from "@/components/live/ConnectionBadge"
+import { BrokerConnectionBadge } from "@/components/live/BrokerConnectionBadge"
 import { ReplayBadge } from "@/components/live/ReplayBadge"
 const SYMBOLS = [
   { label: "NIFTY 50", value: "NIFTY 50" },
@@ -88,6 +89,9 @@ export function Header() {
         <div className="hidden md:flex items-center">
           <ConnectionBadge />
         </div>
+
+        {/* Broker connection badge */}
+        <BrokerConnectionBadge />
 
         {/* Replay badge */}
         <ReplayBadge />
