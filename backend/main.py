@@ -43,6 +43,7 @@ from api.learning import router as learning_router
 from api.orchestrator import router as orchestrator_router, set_orchestrator
 from api.trades import router as trades_router
 from api.live import router as live_router
+from api.market_stream import router as market_stream_router
 from api.kite import router as kite_router, set_provider_factory, set_kite_risk_engine
 from services.prediction_service import initialize as init_prediction_service
 from services.live_market_engine import LiveMarketDataEngine
@@ -148,7 +149,13 @@ async def lifespan(app: FastAPI):
     sub_manager = init_subscription_manager()
 
     # Wire P&L engine to trade lifecycle updates
-    pnl_engine.on_callback(lambda p: None)  # Placeholder for WebSocket broadcast
+    pnl_engine.on_callback(lambda p: None)
+
+    # Initialize the Market Stream Manager
+    from trading.market_stream import init_stream_manager
+
+    stream_manager = init_stream_manager()
+    stream_manager.set_pnl_engine(pnl_engine)
 
     # Start the Tick Engine
     tick_engine = TickEngine(event_bus)
@@ -370,6 +377,7 @@ app.include_router(learning_router)
 app.include_router(orchestrator_router)
 app.include_router(trades_router)
 app.include_router(live_router)
+app.include_router(market_stream_router)
 
 
 # ── WebSocket endpoint ──
@@ -418,3 +426,5 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
