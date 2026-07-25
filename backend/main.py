@@ -15,10 +15,8 @@ Phase 4 architecture:
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-
-from fastapi import WebSocket
 
 from api.market import router as market_router
 from api.prediction import router as prediction_router
@@ -51,18 +49,18 @@ from support_resistance.engine import SREngine
 from ai_decision.engine import AIDecisionEngine
 from multi_timeframe.engine import MTFEngine
 from tick.engine import TickEngine
+from replay.engine import ReplayEngine
 from core.event_bus import EventBus
-from core.event_model import Event
 from core.symbols import list_canonical_names
 from core import service_locator
-from utils.logger import log_info
+from utils.logger import log_info, log_warn
 
 # ── Global services ──
 
 event_bus = EventBus(max_queue_size=1000)
 live_engine: LiveMarketDataEngine | None = None
 websocket_gateway: WebSocketGateway | None = None
-replay_engine: "ReplayEngine | None" = None
+replay_engine: ReplayEngine | None = None
 tick_engine: TickEngine | None = None
 stream_router: StreamRouter | None = None
 candle_engine: CandleEngine | None = None
@@ -78,7 +76,9 @@ mtf_engine: MTFEngine | None = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan: startup + shutdown."""
-    global live_engine, websocket_gateway, replay_engine, tick_engine, stream_router, candle_engine, indicator_engine, market_structure_engine, pattern_engine, trading_context_engine, sr_engine, ai_decision_engine, mtf_engine
+    global live_engine, websocket_gateway, replay_engine, tick_engine
+    global stream_router, candle_engine, indicator_engine, market_structure_engine
+    global pattern_engine, trading_context_engine, sr_engine, ai_decision_engine, mtf_engine
 
     # ── Startup ──
     log_info("Application starting", title="MarketMind AI Backend")
@@ -194,12 +194,24 @@ async def lifespan(app: FastAPI):
 
                 # Feed SR engine with latest results from the 3 upstream engines
                 if sr_engine and sr_engine._running:
-                    ind_snap = indicator_engine.latest_snapshot(seed_symbol, "15m") if indicator_engine else None
-                    struct_snap = market_structure_engine.latest_snapshot(seed_symbol, "15m") if market_structure_engine else None
+                    ind_snap = (
+                        indicator_engine.latest_snapshot(seed_symbol, "15m")
+                        if indicator_engine else None
+                    )
+                    struct_snap = (
+                        market_structure_engine.latest_snapshot(seed_symbol, "15m")
+                        if market_structure_engine else None
+                    )
                     if ind_snap:
-                        await sr_engine._on_indicator(BusEvent(type="indicators_updated", source="bootstrap", payload={"symbol": seed_symbol, **ind_snap}))
+                        payload = {"symbol": seed_symbol, **ind_snap}
+                        await sr_engine._on_indicator(
+                            BusEvent(type="indicators_updated", source="bootstrap", payload=payload)
+                        )
                     if struct_snap:
-                        await sr_engine._on_structure(BusEvent(type="structure_updated", source="bootstrap", payload={"symbol": seed_symbol, **struct_snap}))
+                        payload = {"symbol": seed_symbol, **struct_snap}
+                        await sr_engine._on_structure(
+                            BusEvent(type="structure_updated", source="bootstrap", payload=payload)
+                        )
                     await sr_engine._on_candle(ev)
 
                 log_info("Engines seeded", symbol=seed_symbol, count=len(seed_candles))
@@ -278,8 +290,6 @@ app.include_router(ml_router)
 
 
 # ── WebSocket endpoint ──
-
-from fastapi import WebSocket
 
 
 @app.websocket("/ws")
