@@ -13,24 +13,29 @@ REST endpoints for all Zerodha integration:
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
 from data.provider_factory import ProviderFactory
-from data.base_provider import BaseProvider
 from providers.zerodha.kite_provider import KiteProvider
-from utils.logger import log_info, log_warn, log_error
+from risk.risk_engine import TradeIntent
+from utils.logger import log_warn
 
 router = APIRouter(tags=["zerodha"])
 
 _factory: ProviderFactory | None = None
+_risk_engine: Any | None = None
 
 
 def set_provider_factory(factory: ProviderFactory):
     global _factory
     _factory = factory
+
+
+def set_kite_risk_engine(engine):
+    global _risk_engine
+    _risk_engine = engine
 
 
 def _get_factory() -> ProviderFactory:
@@ -293,11 +298,44 @@ async def kite_place_order(order: dict[str, Any]):
     """
     Place an order.
 
+    The order FIRST passes through the Risk Firewall for validation.
+    If the firewall rejects it, the broker NEVER receives the order.
+
     Required fields: tradingsymbol, exchange, transaction_type, quantity
     Optional: order_type (default MARKET), price, product, validity, variety,
               trigger_price, stoploss, squareoff, trailing_stoploss, tag
     """
     try:
+        # Step 1: Risk Firewall Validation
+        risk = _risk_engine
+        if risk is not None:
+            intent = TradeIntent(
+                symbol=order.get("tradingsymbol", ""),
+                side=order.get("transaction_type", "BUY"),
+                quantity=order.get("quantity", 0),
+                price=order.get("price"),
+                order_type=order.get("order_type", "MARKET"),
+                product=order.get("product", "MIS"),
+                exchange=order.get("exchange", "NSE"),
+                strategy=order.get("strategy", "manual"),
+                ai_score=order.get("ai_score"),
+                ai_confidence=order.get("ai_confidence"),
+                stop_loss=order.get("stoploss"),
+                take_profit=order.get("squareoff"),
+                tag=order.get("tag", ""),
+            )
+
+            validation = risk.validate(intent)
+            if not validation.execution_permitted:
+                return {
+                    "success": False,
+                    "blocked_by_risk_firewall": True,
+                    "validation": validation.to_dict(),
+                }
+        else:
+            log_warn("RiskEngine not available - order placed without risk check")
+
+        # Step 2: Execute via Broker
         kite = _require_kite()
         if not kite.orders.is_ready:
             await kite.connect()
@@ -317,6 +355,10 @@ async def kite_place_order(order: dict[str, Any]):
             trailing_stoploss=order.get("trailing_stoploss"),
             tag=order.get("tag", ""),
         )
+
+        if risk is not None:
+            risk.on_trade_executed(intent)
+
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -472,7 +514,11 @@ async def kite_health():
         return health.to_dict() if hasattr(health, "to_dict") else {
             "status": health.status.value if hasattr(health.status, "value") else str(health.status),
             "provider_name": health.provider_name,
-            "provider_type": health.provider_type.value if hasattr(health.provider_type, "value") else str(health.provider_type),
+            "provider_type": (
+                health.provider_type.value
+                if hasattr(health.provider_type, "value")
+                else str(health.provider_type)
+            ),
             "last_success": health.last_success.isoformat() if health.last_success else None,
             "error_message": health.error_message,
         }
