@@ -2,9 +2,10 @@
 
 import { useTheme } from "next-themes"
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, usePathname } from "next/navigation"
 import { Brain, Search, Sun, Moon, Settings, Menu, ChevronDown } from "lucide-react"
 import { useLayoutStore } from "@/store/useLayoutStore"
+import { useMarketStore } from "@/store/useMarketStore"
 import { useNotificationStore } from "@/store/useNotificationStore"
 import { NotificationBell } from "@/components/notifications/NotificationBell"
 import { NotificationDrawer } from "@/components/notifications/NotificationDrawer"
@@ -23,11 +24,16 @@ const TIMEFRAMES = ["1m", "3m", "5m", "15m", "30m", "60m"]
 
 export function Header() {
   const router = useRouter()
+  const pathname = usePathname()
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
   const toggleSidebar = useLayoutStore((s) => s.toggleSidebar)
   const unreadCount = useNotificationStore((s) => s.unreadCount)
   const toggleDrawer = useNotificationStore((s) => s.toggleDrawer)
+  const selectedSymbol = useMarketStore((s) => s.selectedSymbol)
+  const setSelectedSymbol = useMarketStore((s) => s.setSelectedSymbol)
+  const selectedInterval = useMarketStore((s) => s.selectedInterval)
+  const setSelectedInterval = useMarketStore((s) => s.setSelectedInterval)
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMounted(true) }, [])
 
@@ -59,29 +65,20 @@ export function Header() {
         <span className="ml-auto text-[10px] text-muted-foreground/50">Ctrl+K</span>
       </div>
 
-      {/* Symbol select */}
-      <select className="h-7 rounded-md border bg-muted/50 px-2 text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-ring">
-        {SYMBOLS.map((s) => (
-          <option key={s.value} value={s.value}>{s.label}</option>
-        ))}
-      </select>
-
-      {/* Timeframe buttons */}
-      <div className="hidden sm:flex items-center rounded-md border overflow-hidden">
-        {TIMEFRAMES.map((tf) => (
-          <button
-            key={tf}
-            className={cn(
-              "px-2 py-1 text-[11px] font-medium transition-colors",
-              tf === "15m"
-                ? "bg-primary text-primary-foreground"
-                : "bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-            )}
+      {/* Symbol — Dashboard only */}
+      {pathname === "/dashboard" && (
+        <>
+          <select
+            value={selectedSymbol}
+            onChange={(e) => setSelectedSymbol(e.target.value)}
+            className="h-7 rounded-md border bg-muted/50 px-2 text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           >
-            {tf}
-          </button>
-        ))}
-      </div>
+            {SYMBOLS.map((s) => (
+              <option key={s.value} value={s.value}>{s.label}</option>
+            ))}
+          </select>
+        </>
+      )}
 
       {/* Notification drawer + toast rendered here so the bell in Header works */}
       <NotificationDrawer />

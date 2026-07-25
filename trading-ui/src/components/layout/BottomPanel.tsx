@@ -8,6 +8,8 @@ const TABS = [
   { id: "logs", label: "Logs" },
   { id: "orders", label: "Orders" },
   { id: "trades", label: "Trades" },
+  { id: "positions", label: "Positions" },
+  { id: "alerts", label: "Alerts" },
   { id: "replay", label: "Replay" },
   { id: "api", label: "API" },
   { id: "websocket", label: "WebSocket" },
@@ -72,10 +74,30 @@ function WebSocketTab() {
   )
 }
 
+function PositionsTab() {
+  return (
+    <div className="text-[11px] text-muted-foreground">
+      <p className="font-medium text-foreground mb-2">Open Positions</p>
+      <p>No open positions. Positions will appear here when you start trading.</p>
+    </div>
+  )
+}
+
+function AlertsTab() {
+  return (
+    <div className="text-[11px] text-muted-foreground">
+      <p className="font-medium text-foreground mb-2">Alerts</p>
+      <p>No alerts configured. Set up price alerts from the chart or portfolio page.</p>
+    </div>
+  )
+}
+
 const TAB_COMPONENTS: Record<string, React.FC> = {
   logs: LogsTab,
   orders: OrdersTab,
   trades: TradesTab,
+  positions: PositionsTab,
+  alerts: AlertsTab,
   replay: ReplayTab,
   api: ApiTab,
   websocket: WebSocketTab,
