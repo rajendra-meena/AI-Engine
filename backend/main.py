@@ -40,6 +40,7 @@ from api.ai_orchestrator import router as ai_orchestrator_router
 from api.research.routes import router as research_router
 from api.risk import router as risk_router, set_risk_engine
 from api.learning import router as learning_router
+from api.orchestrator import router as orchestrator_router, set_orchestrator
 from api.kite import router as kite_router, set_provider_factory, set_kite_risk_engine
 from services.prediction_service import initialize as init_prediction_service
 from services.live_market_engine import LiveMarketDataEngine
@@ -117,6 +118,12 @@ async def lifespan(app: FastAPI):
     from learning.database import init_learning_tables
 
     init_learning_tables()
+
+    # Initialize the Trading Orchestrator
+    from orchestrator.trading_orchestrator import TradingOrchestrator
+
+    orchestrator = TradingOrchestrator()
+    set_orchestrator(orchestrator)
 
     # Start the Tick Engine
     tick_engine = TickEngine(event_bus)
@@ -335,6 +342,7 @@ app.include_router(ml_router)
 app.include_router(kite_router)
 app.include_router(risk_router)
 app.include_router(learning_router)
+app.include_router(orchestrator_router)
 
 
 # ── WebSocket endpoint ──

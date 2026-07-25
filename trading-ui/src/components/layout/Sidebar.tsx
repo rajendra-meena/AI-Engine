@@ -6,7 +6,7 @@ import { motion } from "framer-motion"
 import { useRouter } from "next/navigation"
 import {
   LayoutDashboard, TrendingUp, History, Target, Wallet, BarChart3, Settings,
-  GitBranch, Radio, Cpu, Lightbulb, Wifi, ChevronLeft, Shield, Brain,
+  GitBranch, Radio, Cpu, Lightbulb, Wifi, ChevronLeft, Shield, Brain, Activity,
 } from "lucide-react"
 import { useCallback, useEffect } from "react"
 
@@ -26,6 +26,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: "paper", label: "Paper Trading", icon: <Wallet className="w-4 h-4" />, href: "/portfolio" },
   { id: "strategy", label: "Strategies", icon: <GitBranch className="w-4 h-4" />, href: "/strategy" },
   { id: "intelligence", label: "Intelligence", icon: <Radio className="w-4 h-4" />, href: "/intelligence" },
+  { id: "orchestrator", label: "Orchestrator", icon: <Activity className="w-4 h-4" />, href: "/orchestrator" },
   { id: "ml", label: "ML", icon: <Cpu className="w-4 h-4" />, href: "/ml" },
   { id: "learning", label: "AI Learning", icon: <Brain className="w-4 h-4" />, href: "/learning" },
   { id: "risk", label: "Risk Center", icon: <Shield className="w-4 h-4" />, href: "/risk" },
