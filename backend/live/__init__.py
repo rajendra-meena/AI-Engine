@@ -59,6 +59,7 @@ from live.rollout_monitor import RolloutPerformanceMonitor, PerformanceSnapshot
 from live.rollback_controller import RollbackController, RollbackCheckResult, RollbackExecutionResult
 from live.progressive_rollout import ProgressiveRolloutEngine, ProgressiveRolloutError
 from live.execution_controller import Phase46ExecutionController, ExecutionResult
+from live.controlled_live_integration import ControlledLiveIntegration, ControlledLiveState, LiveExecutionRecord, MAX_TRADES_PER_SESSION, MAX_QUANTITY, MAX_NOTIONAL
 
 __all__ = [
     "PreLiveCheck", "PreLiveValidationReport",
@@ -102,4 +103,6 @@ __all__ = [
     "HumanReviewDecision", "MultiCanaryTracker",
     "RolloutGovernanceEngine",
     "Phase46ExecutionController", "ExecutionResult",
+    "ControlledLiveIntegration", "ControlledLiveState", "LiveExecutionRecord",
+    "MAX_TRADES_PER_SESSION", "MAX_QUANTITY", "MAX_NOTIONAL",
 ]
