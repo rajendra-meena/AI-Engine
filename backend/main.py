@@ -57,6 +57,7 @@ from api.final_approval import router as final_approval_router
 from api.runtime import router as runtime_router
 from api.backtest_validation import router as backtest_validation_router
 from api.kite import router as kite_router, set_provider_factory, set_kite_risk_engine
+from api.live_activation import router as live_activation_router, set_activation_gate, set_live_execution_gate
 from services.prediction_service import initialize as init_prediction_service
 from services.live_market_engine import LiveMarketDataEngine
 from websocket.gateway import WebSocketGateway
@@ -235,6 +236,56 @@ async def lifespan(app: FastAPI):
 
     exec_gateway = ExecutionGateway(trade_lifecycle, risk_engine)
     set_execution_gateway(exec_gateway)
+
+    # Initialize the Activation Gate (Phase 45)
+    from live.activation_gate import ControlledLiveActivationGate
+    from live.live_execution_gate import LiveExecutionGate
+    from trading.runtime_mode import RuntimeModeManager
+    from execution.kill_switch import KillSwitch
+    from execution.config_guard import ConfigGuard
+    from execution.execution_health import ExecutionHealthMonitor
+    from execution.execution_audit import ExecutionAuditLog
+    from execution.execution_policy import ExecutionPolicyEngine
+
+    activation_gate = ControlledLiveActivationGate()
+    # Wire available dependencies (all optional — gate degrades gracefully)
+    try:
+        from risk.risk_engine import RiskEngine
+        activation_gate.set_risk_engine(risk_engine)
+    except Exception:
+        pass
+    try:
+        from execution.kill_switch import KillSwitch
+        ks = KillSwitch()
+        activation_gate.set_kill_switch(ks)
+    except Exception:
+        pass
+    try:
+        from trading.runtime_mode import RuntimeModeManager
+        rm = RuntimeModeManager()
+        activation_gate.set_runtime_mgr(rm)
+    except Exception:
+        pass
+    try:
+        eh = ExecutionHealthMonitor()
+        activation_gate.set_execution_health(eh)
+    except Exception:
+        pass
+    try:
+        al = ExecutionAuditLog()
+        activation_gate.set_audit_log(al)
+    except Exception:
+        pass
+
+    set_activation_gate(activation_gate)
+
+    # Initialize LiveExecutionGate
+    live_exec_gate = LiveExecutionGate(activation_gate, exec_gateway)
+    live_exec_gate.set_kill_switch(ks if 'ks' in dir() else None)
+    live_exec_gate.set_risk_engine(risk_engine if 'risk_engine' in dir() else None)
+    live_exec_gate.set_execution_health(eh if 'eh' in dir() else None)
+    live_exec_gate.set_audit_log(al if 'al' in dir() else None)
+    set_live_execution_gate(live_exec_gate)
 
     # Initialize the Paper Broker
     from execution.paper_broker import init_paper_broker
@@ -433,6 +484,7 @@ app.include_router(orchestrator_router)
 app.include_router(trades_router)
 app.include_router(live_router)
 app.include_router(market_stream_router)
+app.include_router(live_activation_router)
 
 
 # ── WebSocket endpoint ──
