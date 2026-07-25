@@ -29,6 +29,7 @@ _config_guard: ConfigGuard | None = None
 _emergency: EmergencyShutdown | None = None
 _idempotency: IdempotencyGuard | None = None
 _broker: ZerodhaAdapter | None = None
+_gateway = None
 
 
 def set_policy_engine(engine: ExecutionPolicyEngine):
@@ -79,6 +80,11 @@ def set_idempotency(guard: IdempotencyGuard):
 def set_broker(broker: ZerodhaAdapter):
     global _broker
     _broker = broker
+
+
+def set_execution_gateway(gateway):
+    global _gateway
+    _gateway = gateway
 
 
 def _get_policy() -> ExecutionPolicyEngine:
