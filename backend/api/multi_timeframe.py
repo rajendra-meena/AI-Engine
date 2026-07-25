@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Query, HTTPException
 
+from core.symbols import get_canonical_symbol
 from multi_timeframe.engine import MTFEngine
 
 router = APIRouter(tags=["mtf"])
@@ -26,6 +27,7 @@ async def mtf_status():
 
 @router.get("/api/mtf/latest")
 async def mtf_latest(symbol: str = Query("NIFTY 50")):
+    symbol = get_canonical_symbol(symbol)
     snap = _get().latest(symbol)
     if snap is None:
         raise HTTPException(status_code=404, detail="No MTF data")
@@ -34,4 +36,5 @@ async def mtf_latest(symbol: str = Query("NIFTY 50")):
 
 @router.get("/api/mtf/history")
 async def mtf_history(symbol: str = Query("NIFTY 50"), count: int = Query(100)):
+    symbol = get_canonical_symbol(symbol)
     return {"snapshots": _get().history(symbol, count)}

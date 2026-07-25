@@ -6,6 +6,7 @@ Endpoints for querying candles built by the Candle Aggregation Engine.
 
 from fastapi import APIRouter, Query, HTTPException
 
+from core.symbols import get_canonical_symbol
 from candles.engine import CandleEngine
 
 router = APIRouter(tags=["candles"])
@@ -43,6 +44,7 @@ async def candle_latest(
     interval: str = Query("15m"),
 ):
     """Return the most recent completed candle."""
+    symbol = get_canonical_symbol(symbol)
     engine = _get_engine()
     candle = engine.latest(symbol, interval)
     if candle is None:
@@ -57,6 +59,7 @@ async def candle_history(
     count: int = Query(100),
 ):
     """Return recent completed candles."""
+    symbol = get_canonical_symbol(symbol)
     engine = _get_engine()
     return {"candles": engine.history(symbol, interval, count)}
 
@@ -67,6 +70,7 @@ async def candle_active(
     interval: str = Query("15m"),
 ):
     """Return the currently forming candle (not yet closed)."""
+    symbol = get_canonical_symbol(symbol)
     engine = _get_engine()
     ac = engine.active_candle(symbol, interval)
     if ac is None:

@@ -7,7 +7,7 @@ Every module should call these instead of duplicating validation logic.
 
 from datetime import datetime
 
-from core.symbols import is_valid_symbol
+from core.symbols import is_valid_symbol, list_canonical_names
 from core.intervals import is_valid_interval
 
 
@@ -16,7 +16,8 @@ def validate_symbol(display_name: str) -> str | None:
     if not display_name or not isinstance(display_name, str):
         return "Symbol must be a non-empty string"
     if not is_valid_symbol(display_name):
-        return f"Unknown symbol '{display_name}'. Valid: NIFTY 50, BANKNIFTY, SENSEX"
+        valid = ", ".join(list_canonical_names())
+        return f"Unknown symbol '{display_name}'. Valid: {valid}"
     return None
 
 

@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Query, HTTPException
 
+from core.symbols import get_canonical_symbol
 from ai_decision.engine import AIDecisionEngine
 
 router = APIRouter(tags=["ai"])
@@ -26,6 +27,7 @@ async def ai_status():
 
 @router.get("/api/ai/latest")
 async def ai_latest(symbol: str = Query("NIFTY 50")):
+    symbol = get_canonical_symbol(symbol)
     snap = _get().latest(symbol)
     if snap is None:
         raise HTTPException(status_code=404, detail="No AI decision data")
@@ -34,4 +36,5 @@ async def ai_latest(symbol: str = Query("NIFTY 50")):
 
 @router.get("/api/ai/history")
 async def ai_history(symbol: str = Query("NIFTY 50"), count: int = Query(100)):
+    symbol = get_canonical_symbol(symbol)
     return {"snapshots": _get().history(symbol, count)}

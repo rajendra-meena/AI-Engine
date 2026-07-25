@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Query, HTTPException
 
+from core.symbols import get_canonical_symbol
 from trading_context.engine import TradingContextEngine
 
 router = APIRouter(tags=["context"])
@@ -26,6 +27,7 @@ async def context_status():
 
 @router.get("/api/context/latest")
 async def context_latest(symbol: str = Query("NIFTY 50"), interval: str = Query("15m")):
+    symbol = get_canonical_symbol(symbol)
     snap = _get().latest(symbol, interval)
     if snap is None:
         raise HTTPException(status_code=404, detail="No context data")
@@ -34,4 +36,5 @@ async def context_latest(symbol: str = Query("NIFTY 50"), interval: str = Query(
 
 @router.get("/api/context/history")
 async def context_history(symbol: str = Query("NIFTY 50"), interval: str = Query("15m"), count: int = Query(100)):
+    symbol = get_canonical_symbol(symbol)
     return {"snapshots": _get().history(symbol, interval, count)}

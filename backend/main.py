@@ -53,7 +53,7 @@ from multi_timeframe.engine import MTFEngine
 from tick.engine import TickEngine
 from core.event_bus import EventBus
 from core.event_model import Event
-from core.symbols import list_display_names
+from core.symbols import list_canonical_names
 from core import service_locator
 from utils.logger import log_info
 
@@ -161,10 +161,10 @@ async def lifespan(app: FastAPI):
     set_replay_engine(replay_engine)
 
     # Seed engines with recent candle data so they produce initial snapshots
-    # (prevents 404 on first API call).
+    # for every canonical symbol (prevents 404 on first API call).
     # Note: we feed engines directly rather than via Event Bus to ensure
     # synchronous processing before the first API request arrives.
-    for seed_symbol in list_display_names()[:1]:
+    for seed_symbol in list_canonical_names():
         try:
             data = await market_service.get_intraday(seed_symbol, "15m", 5)
             seed_candles = data.get("candles", [])

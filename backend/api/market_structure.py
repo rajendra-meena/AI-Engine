@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Query, HTTPException
 
+from core.symbols import get_canonical_symbol
 from market_structure.engine import MarketStructureEngine
 
 router = APIRouter(tags=["structure"])
@@ -26,6 +27,7 @@ async def structure_status():
 
 @router.get("/api/structure/latest")
 async def structure_latest(symbol: str = Query("NIFTY 50"), interval: str = Query("15m")):
+    symbol = get_canonical_symbol(symbol)
     snap = _get().latest_snapshot(symbol, interval)
     if snap is None:
         raise HTTPException(status_code=404, detail="No structure data")

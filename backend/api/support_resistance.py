@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Query, HTTPException
 
+from core.symbols import get_canonical_symbol
 from support_resistance.engine import SREngine
 
 router = APIRouter(tags=["sr"])
@@ -26,6 +27,7 @@ async def sr_status():
 
 @router.get("/api/sr/latest")
 async def sr_latest(symbol: str = Query("NIFTY 50")):
+    symbol = get_canonical_symbol(symbol)
     snap = _get().latest(symbol)
     if snap is None:
         raise HTTPException(status_code=404, detail="No SR data")
@@ -34,4 +36,5 @@ async def sr_latest(symbol: str = Query("NIFTY 50")):
 
 @router.get("/api/sr/history")
 async def sr_history(symbol: str = Query("NIFTY 50"), count: int = Query(100)):
+    symbol = get_canonical_symbol(symbol)
     return {"snapshots": _get().history(symbol, count)}

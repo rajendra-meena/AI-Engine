@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Query, HTTPException
 
+from core.symbols import get_canonical_symbol
 from patterns.engine import PatternEngine
 
 router = APIRouter(tags=["patterns"])
@@ -26,6 +27,7 @@ async def pattern_status():
 
 @router.get("/api/patterns/latest")
 async def pattern_latest(symbol: str = Query("NIFTY 50"), interval: str = Query("15m")):
+    symbol = get_canonical_symbol(symbol)
     snap = _get().latest_snapshot(symbol, interval)
     if snap is None:
         raise HTTPException(status_code=404, detail="No pattern data")

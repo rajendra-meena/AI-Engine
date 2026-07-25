@@ -4,6 +4,7 @@ MarketMind AI — Indicator API Routes
 
 from fastapi import APIRouter, Query, HTTPException
 
+from core.symbols import get_canonical_symbol
 from indicators.engine import IndicatorEngine
 
 router = APIRouter(tags=["indicators"])
@@ -34,6 +35,7 @@ async def indicator_latest(
     interval: str = Query("15m"),
 ):
     """Return the latest indicator snapshot for a symbol/interval."""
+    symbol = get_canonical_symbol(symbol)
     engine = _get_engine()
     snap = engine.latest_snapshot(symbol, interval)
     if snap is None:

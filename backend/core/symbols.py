@@ -24,7 +24,11 @@ class SymbolInfo(NamedTuple):
 
 
 def _build_symbols():
-    """Build the full symbol registry."""
+    """Build the full symbol registry.
+
+    Multiple display names can point to the same instrument (e.g. "BANKNIFTY"
+    and "BANK NIFTY"). The FIRST entry per yahoo_ticker is the canonical name.
+    """
     return {
         "NIFTY 50": SymbolInfo(
             display_name="NIFTY 50",
@@ -33,6 +37,11 @@ def _build_symbols():
         ),
         "BANKNIFTY": SymbolInfo(
             display_name="BANKNIFTY",
+            yahoo_ticker="^NSEBANK",
+            exchange="NSE",
+        ),
+        "BANK NIFTY": SymbolInfo(
+            display_name="BANK NIFTY",
             yahoo_ticker="^NSEBANK",
             exchange="NSE",
         ),
@@ -52,6 +61,12 @@ SYMBOL_MAP = {name: info.yahoo_ticker for name, info in SYMBOLS.items()}
 
 # Yahoo ticker → Display name map (reverse lookup)
 DISPLAY_NAMES = {info.yahoo_ticker: name for name, info in SYMBOLS.items()}
+
+# Ticker → canonical display name (the first entry per ticker in SYMBOLS order)
+_CANONICAL: dict[str, str] = {}
+for name, info in SYMBOLS.items():
+    if info.yahoo_ticker not in _CANONICAL:
+        _CANONICAL[info.yahoo_ticker] = name
 
 # Default symbol
 DEFAULT_SYMBOL = "NIFTY 50"
@@ -77,6 +92,22 @@ def is_valid_symbol(display_name: str) -> bool:
     return display_name in SYMBOLS
 
 
+def get_canonical_symbol(display_name: str) -> str:
+    """Resolve any known alias to the canonical display name.
+
+    E.g. "BANK NIFTY" → "BANKNIFTY". Returns input unchanged if unknown.
+    """
+    ticker = SYMBOL_MAP.get(display_name)
+    if ticker is None:
+        return display_name
+    return _CANONICAL.get(ticker, display_name)
+
+
 def list_display_names() -> list[str]:
     """Return all known symbol display names."""
     return list(SYMBOLS.keys())
+
+
+def list_canonical_names() -> list[str]:
+    """Return canonical (non-alias) display names — one per instrument."""
+    return list(_CANONICAL.values())
