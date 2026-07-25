@@ -82,12 +82,17 @@ export function BrokerSettingsPanel() {
       setStatus("connecting")
       setError(null)
       const res = await fetch(`${apiBase}/api/kite/login-url`)
-      const data = await res.json()
-      if (data.success) {
-        setState((s) => ({ ...s, login_url: data.login_url }))
-        window.open(data.login_url, "_blank", "noopener,noreferrer")
+      if (res.ok) {
+        const data = await res.json()
+        if (data.success) {
+          setState((s) => ({ ...s, login_url: data.login_url }))
+          window.open(data.login_url, "_blank", "noopener,noreferrer")
+        } else {
+          setError(data.detail || "Failed to generate login URL")
+        }
       } else {
-        setError("Failed to generate login URL")
+        const err = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }))
+        setError(err.detail || "Failed to generate login URL")
       }
     } catch {
       setError("Connection failed")

@@ -14,6 +14,8 @@ Phase 4 architecture:
 """
 
 from contextlib import asynccontextmanager
+from dotenv import load_dotenv
+from pathlib import Path
 
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
@@ -55,6 +57,9 @@ from core.event_bus import EventBus
 from core.symbols import list_canonical_names
 from core import service_locator
 from utils.logger import log_info, log_warn
+
+# Load .env from project root (parent of backend/)
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 # ── Global services ──
 
