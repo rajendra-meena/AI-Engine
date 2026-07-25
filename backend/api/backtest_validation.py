@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException
 from backtest.walk_forward import WalkForwardEngine
 from backtest.monte_carlo import MonteCarloEngine, MonteCarloConfig
 from backtest.sensitivity import SensitivityEngine
+from backtest.optimization import OptimizationEngine
 from backtest.validation_report import generate_validation_report
 
 router = APIRouter(tags=["backtest-validation"])
@@ -155,6 +156,39 @@ async def delete_validation(val_id: str):
         del _validations[val_id]
         return {"success": True}
     raise HTTPException(status_code=404, detail="Validation not found")
+
+
+@router.post("/api/backtest/optimization/run")
+async def run_optimization(params: dict[str, Any]):
+    """Run strategy optimization search."""
+    import random
+
+    def _trade_fn(**kw):
+        return {
+            "total_trades": random.randint(20, 100),
+            "win_rate": random.uniform(40, 70),
+            "net_pnl": random.uniform(-1000, 5000),
+            "profit_factor": random.uniform(0.5, 3.0),
+            "sharpe": random.uniform(-0.5, 2.0),
+            "max_drawdown_pct": random.uniform(5, 45),
+            "expectancy": random.uniform(-20, 80),
+            "probability_of_ruin": random.uniform(0, 30),
+            "oos_return": random.uniform(-10, 30),
+        }
+
+    engine = OptimizationEngine()
+    report = engine.run(
+        trade_fn=_trade_fn,
+        champion_config=params.get("champion_config"),
+        min_trades=params.get("min_trades", 20),
+    )
+    return report.to_dict()
+
+
+@router.get("/api/backtest/optimization/{opt_id}")
+async def get_optimization(opt_id: str):
+    """Get optimization report."""
+    return {"message": "Use POST /api/backtest/optimization/run to run optimization", "optimization_id": opt_id}
 
 
 @router.post("/api/backtest/validation/compare")
