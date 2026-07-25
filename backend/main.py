@@ -14,6 +14,7 @@ Phase 4 architecture:
 """
 
 from contextlib import asynccontextmanager
+import asyncio
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -144,10 +145,6 @@ async def lifespan(app: FastAPI):
     set_pnl_engine(pnl_engine)
 
     # Initialize the Market Subscription Manager
-    from trading.market_subscription import init_subscription_manager
-
-    sub_manager = init_subscription_manager()
-
     # Wire P&L engine to trade lifecycle updates
     pnl_engine.on_callback(lambda p: None)
 
@@ -161,6 +158,9 @@ async def lifespan(app: FastAPI):
     tick_engine = TickEngine(event_bus)
     set_tick_engine(tick_engine)
     await tick_engine.start()
+
+    # Wire MarketStreamManager to forward ticks to TickEngine
+    stream_manager.set_tick_callback(lambda tick: asyncio.ensure_future(tick_engine.publish_tick(tick)))
 
     # Start the Market Stream Router
     stream_router = StreamRouter(event_bus)
@@ -426,5 +426,3 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-
