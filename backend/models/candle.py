@@ -25,16 +25,17 @@ class Candle:
 
     Fields match the existing {time, open, high, low, close, volume} format.
     """
+
     symbol: str = ""
     interval: str = ""
-    time: str = ""                  # ISO-8601 datetime string
+    time: str = ""  # ISO-8601 datetime string
     open: float = 0.0
     high: float = 0.0
     low: float = 0.0
     close: float = 0.0
     volume: float = 0.0
     provider: str = "yahoo"
-    is_closed: bool = True          # False if the candle is still forming
+    is_closed: bool = True  # False if the candle is still forming
 
     @property
     def range(self) -> float:
@@ -119,8 +120,9 @@ class DailyCandle:
 
     Fields match the existing {Date, Open, High, Low, Close, Volume} format.
     """
+
     symbol: str = ""
-    date: str = ""                  # YYYY-MM-DD
+    date: str = ""  # YYYY-MM-DD
     open: float = 0.0
     high: float = 0.0
     low: float = 0.0

@@ -24,9 +24,11 @@ class ScoreEngine:
     }
 
     @staticmethod
-    def evaluate(context_snap: dict[str, Any] | None,
-                 mtf_snap: dict[str, Any] | None,
-                 sr_snap: dict[str, Any] | None) -> dict[str, Any]:
+    def evaluate(
+        context_snap: dict[str, Any] | None,
+        mtf_snap: dict[str, Any] | None,
+        sr_snap: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         if not context_snap:
             return {"score": 0, "grade": "VERY_LOW", "reasoning": ["No context data"]}
 
@@ -38,10 +40,14 @@ class ScoreEngine:
         trend = context_snap.get("trend", "NEUTRAL")
         trend_str = context_snap.get("trend_strength", "WEAK")
         if trend == "BULLISH":
-            score += ScoreEngine.WEIGHTS["trend"] * (1.0 if trend_str == "STRONG" else 0.6)
+            score += ScoreEngine.WEIGHTS["trend"] * (
+                1.0 if trend_str == "STRONG" else 0.6
+            )
             reasoning.append(f"Trend: {trend} ({trend_str})")
         elif trend == "BEARISH":
-            score += ScoreEngine.WEIGHTS["trend"] * (1.0 if trend_str == "STRONG" else 0.6)
+            score += ScoreEngine.WEIGHTS["trend"] * (
+                1.0 if trend_str == "STRONG" else 0.6
+            )
             reasoning.append(f"Trend: {trend} ({trend_str})")
         else:
             score += ScoreEngine.WEIGHTS["trend"] * 0.2
@@ -96,7 +102,9 @@ class ScoreEngine:
         if sr_snap:
             nearest_s = sr_snap.get("nearest_support")
             nearest_r = sr_snap.get("nearest_resistance")
-            close = context_snap.get("candle_close") or context_snap.get("indicator_snap", {}).get("candle_close")
+            close = context_snap.get("candle_close") or context_snap.get(
+                "indicator_snap", {}
+            ).get("candle_close")
             if nearest_s and nearest_r and close:
                 range_size = nearest_r - nearest_s
                 if range_size > 0:
@@ -118,7 +126,9 @@ class ScoreEngine:
             reasoning.append("Volatility: Contracting (wait)")
 
         # Normalize
-        normalized = min(100, max(0, int((score / max_score) * 100))) if max_score > 0 else 0
+        normalized = (
+            min(100, max(0, int((score / max_score) * 100))) if max_score > 0 else 0
+        )
 
         if normalized >= 80:
             grade = "VERY_HIGH"

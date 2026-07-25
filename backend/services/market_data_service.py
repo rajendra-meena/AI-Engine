@@ -119,12 +119,16 @@ class MarketDataService:
             "provider": caps.provider_name,
             "type": caps.provider_type.value,
             "status": health.status.value,
-            "last_success": health.last_success.isoformat() if health.last_success else None,
+            "last_success": (
+                health.last_success.isoformat() if health.last_success else None
+            ),
             "error_message": health.error_message,
             "supported_symbols": caps.symbols,
             "supported_intervals": caps.intervals,
         }
-        await self._cache.set(cache_key, result, ttl_seconds=MEMORY_CACHE_TTL_PROVIDER_STATUS)
+        await self._cache.set(
+            cache_key, result, ttl_seconds=MEMORY_CACHE_TTL_PROVIDER_STATUS
+        )
         return result
 
     async def health(self) -> ProviderHealth:
@@ -169,7 +173,9 @@ class MarketDataService:
             return {"symbol": symbol, "data": [], "error": err}
 
         end_date = end_date or date.today()
-        start_date = start_date or (end_date - timedelta(days=DAILY_LOOKBACK_DEFAULT_DAYS))
+        start_date = start_date or (
+            end_date - timedelta(days=DAILY_LOOKBACK_DEFAULT_DAYS)
+        )
 
         # 1. Try memory cache first
         cache_key = daily_key(symbol)
@@ -177,7 +183,8 @@ class MarketDataService:
         if cached_result is not None:
             # Filter cached full dataset to requested range
             filtered = [
-                d for d in cached_result
+                d
+                for d in cached_result
                 if start_date <= date.fromisoformat(d["Date"]) <= end_date
             ]
             return {"symbol": symbol, "data": filtered}
@@ -188,20 +195,35 @@ class MarketDataService:
 
         # 2. Try CSV cache
         cached_records, cached_last_date_str, _ = load_daily_csv(ticker)
-        cached_last_date = date.fromisoformat(cached_last_date_str) if cached_last_date_str else None
+        cached_last_date = (
+            date.fromisoformat(cached_last_date_str) if cached_last_date_str else None
+        )
 
         # 3. Check if CSV cache is fresh
-        need_fetch = self._daily_cache_needs_refresh(cached_records, cached_last_date, start_date, end_date, today)
+        need_fetch = self._daily_cache_needs_refresh(
+            cached_records, cached_last_date, start_date, end_date, today
+        )
 
         if need_fetch:
-            cached_records = await self._refresh_daily_cache(provider, symbol, ticker, cached_records, cached_last_date, start_date, end_date)
+            cached_records = await self._refresh_daily_cache(
+                provider,
+                symbol,
+                ticker,
+                cached_records,
+                cached_last_date,
+                start_date,
+                end_date,
+            )
 
         # 4. Store full dataset in memory cache
-        await self._cache.set(cache_key, cached_records, ttl_seconds=MEMORY_CACHE_TTL_DAILY)
+        await self._cache.set(
+            cache_key, cached_records, ttl_seconds=MEMORY_CACHE_TTL_DAILY
+        )
 
         # 5. Filter to requested range
         filtered = [
-            d for d in cached_records
+            d
+            for d in cached_records
             if start_date <= date.fromisoformat(d["Date"]) <= end_date
         ]
 
@@ -234,7 +256,9 @@ class MarketDataService:
         cached_result = await self._cache.get(cache_key)
         if cached_result is not None:
             cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-            result = [c for c in cached_result if datetime.fromisoformat(c["time"]) >= cutoff]
+            result = [
+                c for c in cached_result if datetime.fromisoformat(c["time"]) >= cutoff
+            ]
             deduped = self._deduplicate_candles(result)
 
             # Reference levels are cached separately
@@ -256,17 +280,25 @@ class MarketDataService:
 
         # 3. Check if CSV cache needs refresh
         now_utc = datetime.now(timezone.utc)
-        need_fetch = self._intraday_cache_needs_refresh(latest_cached_time, interval, now_utc)
+        need_fetch = self._intraday_cache_needs_refresh(
+            latest_cached_time, interval, now_utc
+        )
 
         if need_fetch:
-            cached_candles = await self._refresh_intraday_cache(provider, symbol, ticker, interval, cached_candles, days)
+            cached_candles = await self._refresh_intraday_cache(
+                provider, symbol, ticker, interval, cached_candles, days
+            )
 
         # 4. Store full dataset in memory cache
-        await self._cache.set(cache_key, cached_candles, ttl_seconds=MEMORY_CACHE_TTL_INTRADAY)
+        await self._cache.set(
+            cache_key, cached_candles, ttl_seconds=MEMORY_CACHE_TTL_INTRADAY
+        )
 
         # 5. Trim to requested days
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-        result = [c for c in cached_candles if datetime.fromisoformat(c["time"]) >= cutoff]
+        result = [
+            c for c in cached_candles if datetime.fromisoformat(c["time"]) >= cutoff
+        ]
         deduped = self._deduplicate_candles(result)
 
         # 6. Fetch daily reference levels (cached)
@@ -305,7 +337,9 @@ class MarketDataService:
 
     # ── Cache helpers ──
 
-    def _daily_cache_needs_refresh(self, cached_records, cached_last_date, start_date, end_date, today):
+    def _daily_cache_needs_refresh(
+        self, cached_records, cached_last_date, start_date, end_date, today
+    ):
         if cached_last_date is None or cached_last_date < end_date:
             return True
         fetch_start_needed = start_date - timedelta(days=DAILY_LOOKBACK_DEFAULT_DAYS)
@@ -332,17 +366,33 @@ class MarketDataService:
             return True
         return True
 
-    async def _refresh_daily_cache(self, provider, symbol, ticker, cached_records, cached_last_date, start_date, end_date):
+    async def _refresh_daily_cache(
+        self,
+        provider,
+        symbol,
+        ticker,
+        cached_records,
+        cached_last_date,
+        start_date,
+        end_date,
+    ):
         """Fetch missing daily data via provider and merge with CSV cache."""
         if cached_last_date and cached_last_date < end_date:
             fetch_start = cached_last_date - timedelta(days=DAILY_OVERLAP_DAYS)
         else:
             fetch_start = start_date - timedelta(days=DAILY_LOOKBACK_DEFAULT_DAYS)
 
-        log_info("Fetching daily data", symbol=symbol, start=str(fetch_start), end=str(end_date))
+        log_info(
+            "Fetching daily data",
+            symbol=symbol,
+            start=str(fetch_start),
+            end=str(end_date),
+        )
 
         try:
-            ohlc_list = await self._call_with_retry(provider.fetch_daily, symbol, fetch_start, end_date)
+            ohlc_list = await self._call_with_retry(
+                provider.fetch_daily, symbol, fetch_start, end_date
+            )
         except ProviderError as e:
             log_warn("Provider fetch_daily failed", symbol=symbol, error=str(e))
             return cached_records or []
@@ -360,14 +410,23 @@ class MarketDataService:
             write_full_daily_csv(ticker, new_records)
             return new_records
 
-    async def _refresh_intraday_cache(self, provider, symbol, ticker, interval, cached_candles, days):
+    async def _refresh_intraday_cache(
+        self, provider, symbol, ticker, interval, cached_candles, days
+    ):
         """Fetch missing intraday data via provider and merge with CSV cache."""
         log_info("Fetching intraday data", symbol=symbol, interval=interval, days=days)
 
         try:
-            candles = await self._call_with_retry(provider.fetch_intraday, symbol, interval, days)
+            candles = await self._call_with_retry(
+                provider.fetch_intraday, symbol, interval, days
+            )
         except ProviderError as e:
-            log_warn("Provider fetch_intraday failed", symbol=symbol, interval=interval, error=str(e))
+            log_warn(
+                "Provider fetch_intraday failed",
+                symbol=symbol,
+                interval=interval,
+                error=str(e),
+            )
             return cached_candles
 
         new_records = [c.to_dict() for c in candles]
@@ -398,7 +457,9 @@ class MarketDataService:
         refs = await self._fetch_daily_reference_levels(provider, symbol)
         ref_dict = refs.to_dict() if refs else None
         if ref_dict:
-            await self._cache.set(ref_key, ref_dict, ttl_seconds=MEMORY_CACHE_TTL_REFERENCE)
+            await self._cache.set(
+                ref_key, ref_dict, ttl_seconds=MEMORY_CACHE_TTL_REFERENCE
+            )
         return ref_dict
 
     # ── Retry logic ──

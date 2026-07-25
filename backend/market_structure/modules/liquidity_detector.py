@@ -24,7 +24,12 @@ class LiquidityZone:
     time: str = ""
 
     def to_dict(self) -> dict[str, Any]:
-        return {"type": self.zone_type, "price": self.price, "strength": self.strength, "time": self.time}
+        return {
+            "type": self.zone_type,
+            "price": self.price,
+            "strength": self.strength,
+            "time": self.time,
+        }
 
 
 class LiquidityDetector:
@@ -55,11 +60,19 @@ class LiquidityDetector:
         for i in range(len(candles_list) - 1):
             diff = abs(candle.high - candles_list[i].high) / candle.high
             if diff < self.tolerance and candle.time != candles_list[i].time:
-                existing = [z for z in self._zones if z.zone_type == "equal_high"
-                           and abs(z.price - candle.high) / candle.high < self.tolerance]
+                existing = [
+                    z
+                    for z in self._zones
+                    if z.zone_type == "equal_high"
+                    and abs(z.price - candle.high) / candle.high < self.tolerance
+                ]
                 if not existing:
-                    zone = LiquidityZone(zone_type="equal_high", price=round(candle.high, 2),
-                                         strength=2, time=candle.time)
+                    zone = LiquidityZone(
+                        zone_type="equal_high",
+                        price=round(candle.high, 2),
+                        strength=2,
+                        time=candle.time,
+                    )
                     self._zones.append(zone)
                     new_zones.append(zone)
 
@@ -67,17 +80,29 @@ class LiquidityDetector:
         for i in range(len(candles_list) - 1):
             diff = abs(candle.low - candles_list[i].low) / candle.low
             if diff < self.tolerance and candle.time != candles_list[i].time:
-                existing = [z for z in self._zones if z.zone_type == "equal_low"
-                           and abs(z.price - candle.low) / candle.low < self.tolerance]
+                existing = [
+                    z
+                    for z in self._zones
+                    if z.zone_type == "equal_low"
+                    and abs(z.price - candle.low) / candle.low < self.tolerance
+                ]
                 if not existing:
-                    zone = LiquidityZone(zone_type="equal_low", price=round(candle.low, 2),
-                                         strength=2, time=candle.time)
+                    zone = LiquidityZone(
+                        zone_type="equal_low",
+                        price=round(candle.low, 2),
+                        strength=2,
+                        time=candle.time,
+                    )
                     self._zones.append(zone)
                     new_zones.append(zone)
 
         # Liquidity sweep detection: price exceeded recent equal high/low then reversed
         for z in self._zones[-5:]:
-            if z.zone_type == "equal_high" and candle.high > z.price * 1.001 and candle.close < z.price:
+            if (
+                z.zone_type == "equal_high"
+                and candle.high > z.price * 1.001
+                and candle.close < z.price
+            ):
                 self._sweeps += 1
 
         return new_zones

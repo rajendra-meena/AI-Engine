@@ -7,8 +7,9 @@ class TrendContext:
     """Evaluates overall trend quality from indicators + structure."""
 
     @staticmethod
-    def evaluate(indicator_snap: dict[str, Any] | None,
-                 structure_snap: dict[str, Any] | None) -> dict[str, Any]:
+    def evaluate(
+        indicator_snap: dict[str, Any] | None, structure_snap: dict[str, Any] | None
+    ) -> dict[str, Any]:
         if not indicator_snap:
             return {"bias": "NEUTRAL", "strength": "WEAK", "alignment": 0.0}
 
@@ -51,6 +52,10 @@ class TrendContext:
         else:
             bias = "NEUTRAL"
 
-        strength = "STRONG" if abs(bias_score) > 0.7 else "MODERATE" if abs(bias_score) > 0.3 else "WEAK"
+        strength = (
+            "STRONG"
+            if abs(bias_score) > 0.7
+            else "MODERATE" if abs(bias_score) > 0.3 else "WEAK"
+        )
 
         return {"bias": bias, "strength": strength, "alignment": round(bias_score, 2)}

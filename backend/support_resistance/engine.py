@@ -60,10 +60,16 @@ class SRUnit:
             return
 
         c = self._candle
-        swings_high = [s.get("price", 0) for s in
-                       (self._structure.get("swings") or []) if s.get("type") == "high"]
-        swings_low = [s.get("price", 0) for s in
-                      (self._structure.get("swings") or []) if s.get("type") == "low"]
+        swings_high = [
+            s.get("price", 0)
+            for s in (self._structure.get("swings") or [])
+            if s.get("type") == "high"
+        ]
+        swings_low = [
+            s.get("price", 0)
+            for s in (self._structure.get("swings") or [])
+            if s.get("type") == "low"
+        ]
 
         # If structure doesn't have swings list, extract from swing points
         # Fallback: use current_swing_high/low
@@ -73,15 +79,25 @@ class SRUnit:
             swings_low = [self._structure["current_swing_low"]]
 
         # Horizontal levels
-        horiz = HorizontalLevels.generate(c.close, swings_high, swings_low, self._structure)
+        horiz = HorizontalLevels.generate(
+            c.close, swings_high, swings_low, self._structure
+        )
 
         # Dynamic levels
         dynamic = DynamicLevels.generate(self._indicator)
 
         # Supply/Demand
         sd_zones = self._supply_demand.update(swings_high, swings_low, c.close)
-        supply = [z.to_dict() for z in self._supply_demand.get_active() if z.zone_type == "supply"]
-        demand = [z.to_dict() for z in self._supply_demand.get_active() if z.zone_type == "demand"]
+        supply = [
+            z.to_dict()
+            for z in self._supply_demand.get_active()
+            if z.zone_type == "supply"
+        ]
+        demand = [
+            z.to_dict()
+            for z in self._supply_demand.get_active()
+            if z.zone_type == "demand"
+        ]
 
         # Psychological
         psy = PsychologicalLevels.generate(c.close, range_around=3)
@@ -142,8 +158,11 @@ class SREngine:
     def __init__(self, event_bus: EventBus):
         self._event_bus = event_bus
         self._units: dict[str, SRUnit] = {}
-        self._stats = {"total_updates": 0, "total_errors": 0,
-                       "start_time": datetime.now(timezone.utc).isoformat()}
+        self._stats = {
+            "total_updates": 0,
+            "total_errors": 0,
+            "start_time": datetime.now(timezone.utc).isoformat(),
+        }
         self._running = False
 
     async def start(self):
@@ -151,8 +170,12 @@ class SREngine:
             return
         self._running = True
         self._event_bus.subscribe(CANDLE_CLOSED, self._on_candle, name="sr_candle")
-        self._event_bus.subscribe(STRUCTURE_UPDATED, self._on_structure, name="sr_structure")
-        self._event_bus.subscribe(INDICATORS_UPDATED, self._on_indicator, name="sr_indicator")
+        self._event_bus.subscribe(
+            STRUCTURE_UPDATED, self._on_structure, name="sr_structure"
+        )
+        self._event_bus.subscribe(
+            INDICATORS_UPDATED, self._on_indicator, name="sr_indicator"
+        )
         log_info("SREngine started")
 
     async def stop(self):
@@ -163,7 +186,9 @@ class SREngine:
         if not self._running:
             return
         try:
-            symbol = event.payload.get("symbol") or event.payload.get("candle", {}).get("symbol", "")
+            symbol = event.payload.get("symbol") or event.payload.get("candle", {}).get(
+                "symbol", ""
+            )
             if symbol:
                 self._get_unit(symbol).update_candle(event.payload)
                 self._stats["total_updates"] += 1

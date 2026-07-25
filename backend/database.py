@@ -129,7 +129,8 @@ def save_prediction(data):
     """
     conn = get_connection()
     now = datetime.now(timezone.utc).isoformat()
-    conn.execute("""
+    conn.execute(
+        """
         INSERT OR REPLACE INTO predictions (
             id, symbol, interval, predicted_date, created_at,
             direction, trend_label, confidence, suggested_bias,
@@ -147,36 +148,38 @@ def save_prediction(data):
             ?, ?, ?,
             ?, ?, ?
         )
-    """, (
-        # 3 lookup params (for the subquery)
-        data.get("symbol"),
-        data.get("interval", "15m"),
-        data.get("predicted_date"),
-        # 23 column values
-        data.get("symbol"),
-        data.get("interval", "15m"),
-        data.get("predicted_date"),
-        now,
-        data.get("direction"),
-        data.get("trend_label"),
-        data.get("confidence"),
-        data.get("suggested_bias"),
-        data.get("entry_zone"),
-        data.get("stop_loss"),
-        data.get("target"),
-        data.get("predicted_high"),
-        data.get("predicted_low"),
-        data.get("predicted_close"),
-        data.get("rsi"),
-        data.get("atr"),
-        data.get("adx"),
-        json.dumps(data.get("support_levels", [])),
-        json.dumps(data.get("resistance_levels", [])),
-        json.dumps(data.get("fibonacci_levels", {})),
-        json.dumps(data.get("buy_scenario")),
-        json.dumps(data.get("sell_scenario")),
-        data.get("notes"),
-    ))
+    """,
+        (
+            # 3 lookup params (for the subquery)
+            data.get("symbol"),
+            data.get("interval", "15m"),
+            data.get("predicted_date"),
+            # 23 column values
+            data.get("symbol"),
+            data.get("interval", "15m"),
+            data.get("predicted_date"),
+            now,
+            data.get("direction"),
+            data.get("trend_label"),
+            data.get("confidence"),
+            data.get("suggested_bias"),
+            data.get("entry_zone"),
+            data.get("stop_loss"),
+            data.get("target"),
+            data.get("predicted_high"),
+            data.get("predicted_low"),
+            data.get("predicted_close"),
+            data.get("rsi"),
+            data.get("atr"),
+            data.get("adx"),
+            json.dumps(data.get("support_levels", [])),
+            json.dumps(data.get("resistance_levels", [])),
+            json.dumps(data.get("fibonacci_levels", {})),
+            json.dumps(data.get("buy_scenario")),
+            json.dumps(data.get("sell_scenario")),
+            data.get("notes"),
+        ),
+    )
     conn.commit()
     prediction_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
     conn.close()
@@ -199,11 +202,14 @@ def get_predictions(symbol=None, limit=50, status=None):
     if conditions:
         where = "WHERE " + " AND ".join(conditions)
 
-    rows = conn.execute(f"""
+    rows = conn.execute(
+        f"""
         SELECT * FROM predictions {where}
         GROUP BY symbol, interval, predicted_date
         ORDER BY created_at DESC LIMIT ?
-    """, params + [limit]).fetchall()
+    """,
+        params + [limit],
+    ).fetchall()
     conn.close()
     return [_row_to_dict(r) for r in rows]
 
@@ -211,7 +217,9 @@ def get_predictions(symbol=None, limit=50, status=None):
 def get_prediction_by_id(prediction_id):
     """Get a single prediction by id."""
     conn = get_connection()
-    row = conn.execute("SELECT * FROM predictions WHERE id = ?", (prediction_id,)).fetchone()
+    row = conn.execute(
+        "SELECT * FROM predictions WHERE id = ?", (prediction_id,)
+    ).fetchone()
     conn.close()
     return _row_to_dict(row) if row else None
 
@@ -238,7 +246,8 @@ def update_prediction_result(prediction_id, status, actual_data, details):
     """Update a prediction with its backtesting result."""
     conn = get_connection()
     now = datetime.now(timezone.utc).isoformat()
-    conn.execute("""
+    conn.execute(
+        """
         UPDATE predictions SET
             status = ?,
             result_checked_at = ?,
@@ -249,17 +258,19 @@ def update_prediction_result(prediction_id, status, actual_data, details):
             result_details = ?,
             checked_date = ?
         WHERE id = ?
-    """, (
-        status,
-        now,
-        actual_data.get("high"),
-        actual_data.get("low"),
-        actual_data.get("close"),
-        actual_data.get("open"),
-        json.dumps(details),
-        actual_data.get("date"),
-        prediction_id,
-    ))
+    """,
+        (
+            status,
+            now,
+            actual_data.get("high"),
+            actual_data.get("low"),
+            actual_data.get("close"),
+            actual_data.get("open"),
+            json.dumps(details),
+            actual_data.get("date"),
+            prediction_id,
+        ),
+    )
     conn.commit()
     conn.close()
 
@@ -285,27 +296,44 @@ def get_prediction_stats(symbol=None):
         where = "WHERE " + " AND ".join(conditions)
 
     # Total counts
-    total = conn.execute(f"SELECT COUNT(*) FROM predictions {where}", params).fetchone()[0]
+    total = conn.execute(
+        f"SELECT COUNT(*) FROM predictions {where}", params
+    ).fetchone()[0]
 
-    has_result_where = where + " AND status != 'PENDING'" if where else "WHERE status != 'PENDING'"
-    total_checked = conn.execute(f"SELECT COUNT(*) FROM predictions {has_result_where}", params).fetchone()[0]
+    has_result_where = (
+        where + " AND status != 'PENDING'" if where else "WHERE status != 'PENDING'"
+    )
+    total_checked = conn.execute(
+        f"SELECT COUNT(*) FROM predictions {has_result_where}", params
+    ).fetchone()[0]
 
     # Status breakdown
     status_breakdown = {}
-    for s in (Outcome.HIT_TARGET.value, Outcome.HIT_STOPLOSS.value, Outcome.NO_TRADE.value, Outcome.UNCHECKED.value, Outcome.PENDING.value):
+    for s in (
+        Outcome.HIT_TARGET.value,
+        Outcome.HIT_STOPLOSS.value,
+        Outcome.NO_TRADE.value,
+        Outcome.UNCHECKED.value,
+        Outcome.PENDING.value,
+    ):
         sw = f"status = '{s}'"
         full_where = f"{where} AND {sw}" if where else f"WHERE {sw}"
-        count = conn.execute(f"SELECT COUNT(*) FROM predictions {full_where}", params).fetchone()[0]
+        count = conn.execute(
+            f"SELECT COUNT(*) FROM predictions {full_where}", params
+        ).fetchone()[0]
         if count > 0:
             status_breakdown[s] = count
 
     # Direction breakdown within HIT_TARGET
     hits_with_dir = {}
     if where:
-        hits_rows = conn.execute(f"""
+        hits_rows = conn.execute(
+            f"""
             SELECT direction, COUNT(*) as cnt FROM predictions {where}
             AND status = 'HIT_TARGET' GROUP BY direction
-        """, params).fetchall()
+        """,
+            params,
+        ).fetchall()
     else:
         hits_rows = conn.execute("""
             SELECT direction, COUNT(*) as cnt FROM predictions
@@ -315,17 +343,35 @@ def get_prediction_stats(symbol=None):
         hits_with_dir[r["direction"]] = r["cnt"]
 
     # Average confidence
-    avg_conf_row = conn.execute(f"SELECT AVG(confidence) as avg_c FROM predictions {where}", params).fetchone()
-    avg_confidence = round(avg_conf_row["avg_c"], 1) if avg_conf_row and avg_conf_row["avg_c"] else None
+    avg_conf_row = conn.execute(
+        f"SELECT AVG(confidence) as avg_c FROM predictions {where}", params
+    ).fetchone()
+    avg_confidence = (
+        round(avg_conf_row["avg_c"], 1)
+        if avg_conf_row and avg_conf_row["avg_c"]
+        else None
+    )
 
     conn.close()
 
     return {
         "total_predictions": total,
         "total_checked": total_checked,
-        "hit_rate": round(status_breakdown.get("HIT_TARGET", 0) / total_checked * 100, 1) if total_checked > 0 else 0,
-        "stoploss_rate": round(status_breakdown.get("HIT_STOPLOSS", 0) / total_checked * 100, 1) if total_checked > 0 else 0,
-        "no_trade_rate": round(status_breakdown.get("NO_TRADE", 0) / total_checked * 100, 1) if total_checked > 0 else 0,
+        "hit_rate": (
+            round(status_breakdown.get("HIT_TARGET", 0) / total_checked * 100, 1)
+            if total_checked > 0
+            else 0
+        ),
+        "stoploss_rate": (
+            round(status_breakdown.get("HIT_STOPLOSS", 0) / total_checked * 100, 1)
+            if total_checked > 0
+            else 0
+        ),
+        "no_trade_rate": (
+            round(status_breakdown.get("NO_TRADE", 0) / total_checked * 100, 1)
+            if total_checked > 0
+            else 0
+        ),
         "status_breakdown": status_breakdown,
         "hits_by_direction": hits_with_dir,
         "average_confidence": avg_confidence,
@@ -351,7 +397,9 @@ async def check_prediction_result(prediction):
     """
     ticker = SYMBOL_MAP.get(prediction["symbol"])
     if not ticker:
-        return Outcome.UNCHECKED.value, {"error": f"Unknown symbol: {prediction['symbol']}"}
+        return Outcome.UNCHECKED.value, {
+            "error": f"Unknown symbol: {prediction['symbol']}"
+        }
 
     predicted_date = prediction["predicted_date"]
     pred_interval = prediction.get("interval", "15m")
@@ -375,11 +423,16 @@ async def check_prediction_result(prediction):
         if _is_intraday_interval(pred_interval):
             # ── Intraday backtest: fetch intraday candles for the predicted day ──
             rows = await svc.get_intraday_range(
-                prediction["symbol"], start_dt, end_dt, interval=BACKTEST_INTRADAY_INTERVAL
+                prediction["symbol"],
+                start_dt,
+                end_dt,
+                interval=BACKTEST_INTRADAY_INTERVAL,
             )
 
             if not rows:
-                return Outcome.UNCHECKED.value, {"error": f"No intraday data available for {predicted_date}"}
+                return Outcome.UNCHECKED.value, {
+                    "error": f"No intraday data available for {predicted_date}"
+                }
 
             # Filter candles that fall on the predicted_date (IST day)
             actual_high = -float("inf")
@@ -411,18 +464,20 @@ async def check_prediction_result(prediction):
                         first_open = o
 
             if actual_high == -float("inf"):
-                return Outcome.UNCHECKED.value, {"error": f"No intraday candles found for {predicted_date}"}
+                return Outcome.UNCHECKED.value, {
+                    "error": f"No intraday candles found for {predicted_date}"
+                }
 
             actual_close = last_close or actual_close
 
         else:
             # ── Daily backtest: fetch daily OHLC data ──
-            rows = await svc.get_daily_range(
-                prediction["symbol"], start_dt, end_dt
-            )
+            rows = await svc.get_daily_range(prediction["symbol"], start_dt, end_dt)
 
             if not rows:
-                return Outcome.UNCHECKED.value, {"error": f"No data available for {predicted_date}"}
+                return Outcome.UNCHECKED.value, {
+                    "error": f"No data available for {predicted_date}"
+                }
 
             # Find the candle that matches our predicted_date (or the next trading day)
             target_candle = None
@@ -467,7 +522,9 @@ async def check_prediction_result(prediction):
 
             # If both hit, check intraday data to see which happened first
             if target_hit and stoploss_hit:
-                first_event = await _which_happened_first(prediction["symbol"], predicted_date, stop_loss, target, bias)
+                first_event = await _which_happened_first(
+                    prediction["symbol"], predicted_date, stop_loss, target, bias
+                )
                 if first_event == "target":
                     stoploss_hit = False  # target hit first
                 elif first_event == "stoploss":
@@ -481,7 +538,9 @@ async def check_prediction_result(prediction):
                 stoploss_hit = True
 
             if target_hit and stoploss_hit:
-                first_event = await _which_happened_first(prediction["symbol"], predicted_date, stop_loss, target, bias)
+                first_event = await _which_happened_first(
+                    prediction["symbol"], predicted_date, stop_loss, target, bias
+                )
                 if first_event == "target":
                     stoploss_hit = False
                 elif first_event == "stoploss":
@@ -495,7 +554,9 @@ async def check_prediction_result(prediction):
             details["outcome"] = "Stop loss was hit"
         else:
             status = Outcome.NO_TRADE.value
-            details["outcome"] = f"Neither target ({target}) nor stop loss ({stop_loss}) was reached. Day range: {actual_low}-{actual_high}"
+            details["outcome"] = (
+                f"Neither target ({target}) nor stop loss ({stop_loss}) was reached. Day range: {actual_low}-{actual_high}"
+            )
 
         return status, details
 
@@ -543,8 +604,14 @@ def _row_to_dict(row):
     """Convert a sqlite3.Row to a plain dict."""
     d = dict(row)
     # Parse JSON fields back to Python objects
-    for json_field in ("support_levels", "resistance_levels", "fibonacci_levels",
-                       "buy_scenario", "sell_scenario", "result_details"):
+    for json_field in (
+        "support_levels",
+        "resistance_levels",
+        "fibonacci_levels",
+        "buy_scenario",
+        "sell_scenario",
+        "result_details",
+    ):
         if d.get(json_field) and isinstance(d[json_field], str):
             try:
                 d[json_field] = json.loads(d[json_field])

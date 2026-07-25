@@ -23,7 +23,12 @@ from utils.logger import log_info, log_warn
 def create_prediction(data: dict) -> dict:
     """Save a new prediction and return its id."""
     pred_id = save_prediction(data)
-    log_info("Prediction saved", id=pred_id, symbol=data.get("symbol"), date=data.get("predicted_date"))
+    log_info(
+        "Prediction saved",
+        id=pred_id,
+        symbol=data.get("symbol"),
+        date=data.get("predicted_date"),
+    )
     return {"id": pred_id, "status": "saved"}
 
 
@@ -76,14 +81,18 @@ async def check_pending_results():
             },
             details,
         )
-        results.append({
-            "id": pred["id"],
-            "symbol": pred["symbol"],
-            "predicted_date": pred["predicted_date"],
-            "bias": pred["suggested_bias"],
-            "status": status,
-            "outcome": details.get("outcome", details.get("reason", details.get("error", "Checked"))),
-        })
+        results.append(
+            {
+                "id": pred["id"],
+                "symbol": pred["symbol"],
+                "predicted_date": pred["predicted_date"],
+                "bias": pred["suggested_bias"],
+                "status": status,
+                "outcome": details.get(
+                    "outcome", details.get("reason", details.get("error", "Checked"))
+                ),
+            }
+        )
 
     log_info("Pending predictions checked", count=len(results))
     return {"checked": len(results), "results": results}

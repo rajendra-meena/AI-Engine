@@ -21,9 +21,10 @@ class ActiveCandle:
 
     When the candle is closed, to_candle() produces an immutable Candle.
     """
+
     symbol: str = ""
     interval: str = ""
-    open_time: str = ""       # ISO-8601 start time of this candle
+    open_time: str = ""  # ISO-8601 start time of this candle
     open: float = 0.0
     high: float = 0.0
     low: float = float("inf")

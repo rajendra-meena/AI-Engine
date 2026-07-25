@@ -13,33 +13,37 @@ from typing import NamedTuple
 
 class IntervalInfo(NamedTuple):
     """Metadata for a single chart interval."""
-    label: str            # Display name (e.g. "1 min")
-    yahoo_key: str       # Key used in yfinance calls (e.g. "1m")
-    minutes: int         # Duration in minutes
-    seconds: int         # Duration in seconds (computed)
-    is_intraday: bool    # True if interval < 1 day
+
+    label: str  # Display name (e.g. "1 min")
+    yahoo_key: str  # Key used in yfinance calls (e.g. "1m")
+    minutes: int  # Duration in minutes
+    seconds: int  # Duration in seconds (computed)
+    is_intraday: bool  # True if interval < 1 day
 
 
 def _build_intervals():
     """Build the full interval registry."""
     raw = [
         # (label, yahoo_key, minutes)
-        ("1 min",  "1m",  1),
-        ("2 min",  "2m",  2),
-        ("3 min",  "3m",  3),
-        ("5 min",  "5m",  5),
+        ("1 min", "1m", 1),
+        ("2 min", "2m", 2),
+        ("3 min", "3m", 3),
+        ("5 min", "5m", 5),
         ("10 min", "10m", 10),
         ("15 min", "15m", 15),
         ("30 min", "30m", 30),
         ("60 min", "60m", 60),
     ]
-    return {key: IntervalInfo(
-        label=label,
-        yahoo_key=key,
-        minutes=mins,
-        seconds=mins * 60,
-        is_intraday=True,
-    ) for label, key, mins in raw}
+    return {
+        key: IntervalInfo(
+            label=label,
+            yahoo_key=key,
+            minutes=mins,
+            seconds=mins * 60,
+            is_intraday=True,
+        )
+        for label, key, mins in raw
+    }
 
 
 # Populated once on import

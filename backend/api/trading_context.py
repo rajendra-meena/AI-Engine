@@ -35,6 +35,10 @@ async def context_latest(symbol: str = Query("NIFTY 50"), interval: str = Query(
 
 
 @router.get("/api/context/history")
-async def context_history(symbol: str = Query("NIFTY 50"), interval: str = Query("15m"), count: int = Query(100)):
+async def context_history(
+    symbol: str = Query("NIFTY 50"),
+    interval: str = Query("15m"),
+    count: int = Query(100),
+):
     symbol = get_canonical_symbol(symbol)
     return {"snapshots": _get().history(symbol, interval, count)}

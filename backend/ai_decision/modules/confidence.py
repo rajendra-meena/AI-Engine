@@ -14,11 +14,17 @@ class ConfidenceEngine:
     """Evaluates how much we can trust the current data and analysis."""
 
     @staticmethod
-    def evaluate(context_snap: dict[str, Any] | None,
-                 mtf_snap: dict[str, Any] | None,
-                 structure_snap: dict[str, Any] | None) -> dict[str, Any]:
+    def evaluate(
+        context_snap: dict[str, Any] | None,
+        mtf_snap: dict[str, Any] | None,
+        structure_snap: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         if not context_snap:
-            return {"confidence": 0, "grade": "VERY_LOW", "reasoning": ["No context data"]}
+            return {
+                "confidence": 0,
+                "grade": "VERY_LOW",
+                "reasoning": ["No context data"],
+            }
 
         score = 50.0  # base
         reasoning = []

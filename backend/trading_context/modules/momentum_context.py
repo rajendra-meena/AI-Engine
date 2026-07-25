@@ -45,6 +45,15 @@ class MomentumContext:
         else:
             bias = "NEUTRAL"
 
-        state = "STRONG" if abs(bias_score) > 0.6 else "MODERATE" if abs(bias_score) > 0.2 else "WEAK"
+        state = (
+            "STRONG"
+            if abs(bias_score) > 0.6
+            else "MODERATE" if abs(bias_score) > 0.2 else "WEAK"
+        )
 
-        return {"state": state, "strength": state, "bias": bias, "score": round(bias_score, 2)}
+        return {
+            "state": state,
+            "strength": state,
+            "bias": bias,
+            "score": round(bias_score, 2),
+        }

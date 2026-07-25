@@ -40,10 +40,13 @@ from utils.logger import log_info, log_warn
 @dataclass
 class TickStats:
     """Aggregate tick processing statistics."""
+
     total_ticks_received: int = 0
     total_events_published: int = 0
     total_errors: int = 0
-    start_time: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    start_time: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
     last_tick_time: str | None = None
     last_tick_symbol: str = ""
 
@@ -87,10 +90,13 @@ class TickEngine:
         if self._running:
             return
         self._running = True
-        await self._publish_event(STREAM_STARTED, {
-            "start_time": self._stats.start_time,
-            "max_buffer": self._buffer.get_stats()["max_per_symbol"],
-        })
+        await self._publish_event(
+            STREAM_STARTED,
+            {
+                "start_time": self._stats.start_time,
+                "max_buffer": self._buffer.get_stats()["max_per_symbol"],
+            },
+        )
         log_info("TickEngine started")
 
     async def stop(self):
@@ -137,14 +143,17 @@ class TickEngine:
         self._stats.last_tick_symbol = tick.symbol
 
         # Publish event
-        await self._publish_event(NEW_TICK, {
-            "sequence": self._sequence,
-            "symbol": tick.symbol,
-            "price": tick.price,
-            "timestamp": self._stats.last_tick_time,
-            "volume": tick.volume,
-            "provider": tick.provider,
-        })
+        await self._publish_event(
+            NEW_TICK,
+            {
+                "sequence": self._sequence,
+                "symbol": tick.symbol,
+                "price": tick.price,
+                "timestamp": self._stats.last_tick_time,
+                "volume": tick.volume,
+                "provider": tick.provider,
+            },
+        )
 
         return self._sequence
 

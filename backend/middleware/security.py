@@ -51,7 +51,14 @@ class AuditLogger:
     def __init__(self):
         self._logs: list[dict[str, Any]] = []
 
-    def log(self, action: str, resource: str, user_id: Optional[str] = None, detail: Optional[dict] = None, ip: Optional[str] = None):
+    def log(
+        self,
+        action: str,
+        resource: str,
+        user_id: Optional[str] = None,
+        detail: Optional[dict] = None,
+        ip: Optional[str] = None,
+    ):
         entry = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "action": action,
@@ -91,10 +98,14 @@ class InputValidator:
     @staticmethod
     def is_valid_email(email: str) -> bool:
         import re
-        return bool(re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", email))
+
+        return bool(
+            re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", email)
+        )
 
     @staticmethod
     def sanitize_string(value: str, max_length: int = 255) -> str:
         import re
+
         sanitized = re.sub(r"[<>\";]|script|alert", "", value)
         return sanitized[:max_length]

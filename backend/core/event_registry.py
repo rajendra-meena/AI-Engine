@@ -23,6 +23,7 @@ from core.events import *  # import all event type constants
 @dataclass
 class EventTypeInfo:
     """Metadata for a single event type."""
+
     type_key: str
     description: str
     category: str = "general"
@@ -37,7 +38,16 @@ _EVENT_REGISTRY: dict[str, EventTypeInfo] = {
         NEW_CANDLE,
         "A new candle has closed for a given interval/symbol",
         category="market_data",
-        schema_hint={"symbol": "str", "interval": "str", "open": "float", "high": "float", "low": "float", "close": "float", "volume": "float", "time": "str"},
+        schema_hint={
+            "symbol": "str",
+            "interval": "str",
+            "open": "float",
+            "high": "float",
+            "low": "float",
+            "close": "float",
+            "volume": "float",
+            "time": "str",
+        },
     ),
     PRICE_UPDATE: EventTypeInfo(
         PRICE_UPDATE,
@@ -54,7 +64,6 @@ _EVENT_REGISTRY: dict[str, EventTypeInfo] = {
         "EMA crossover event (e.g. 9-period crossed 21-period)",
         category="indicator",
     ),
-
     # ── Indicator Events ──
     RSI_SIGNAL: EventTypeInfo(
         RSI_SIGNAL,
@@ -76,7 +85,6 @@ _EVENT_REGISTRY: dict[str, EventTypeInfo] = {
         "Price touched or exceeded the outer Bollinger Band",
         category="indicator",
     ),
-
     # ── Pattern Events ──
     PATTERN_DETECTED: EventTypeInfo(
         PATTERN_DETECTED,
@@ -108,7 +116,6 @@ _EVENT_REGISTRY: dict[str, EventTypeInfo] = {
         "Price pulled back within the prevailing trend",
         category="pattern",
     ),
-
     # ── Structure Events ──
     SWING_HIGH: EventTypeInfo(
         SWING_HIGH,
@@ -135,7 +142,6 @@ _EVENT_REGISTRY: dict[str, EventTypeInfo] = {
         "Price entered a demand (support) zone",
         category="structure",
     ),
-
     # ── Volume Events ──
     VOLUME_SPIKE: EventTypeInfo(
         VOLUME_SPIKE,
@@ -147,7 +153,6 @@ _EVENT_REGISTRY: dict[str, EventTypeInfo] = {
         "A price move on significantly low volume — potentially a trap",
         category="volume",
     ),
-
     # ── Signal Events (future) ──
     SIGNAL_CREATED: EventTypeInfo(
         SIGNAL_CREATED,
@@ -174,7 +179,6 @@ _EVENT_REGISTRY: dict[str, EventTypeInfo] = {
         "A signal's stop loss was triggered",
         category="signal",
     ),
-
     # ── AI Decision Events (future) ──
     AI_DECISION: EventTypeInfo(
         AI_DECISION,
@@ -191,7 +195,6 @@ _EVENT_REGISTRY: dict[str, EventTypeInfo] = {
         "The AI engine rejected the setup (validation failed)",
         category="ai",
     ),
-
     # ── Market Events ──
     MARKET_OPEN: EventTypeInfo(
         MARKET_OPEN,

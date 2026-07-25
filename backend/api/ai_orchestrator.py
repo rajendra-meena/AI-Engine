@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 router = APIRouter(tags=["ai-orchestrator"])
 
+
 @router.get("/api/ai-orchestrator/health")
 async def ai_orchestrator_health():
     return {
@@ -23,6 +24,7 @@ async def ai_orchestrator_health():
         },
     }
 
+
 @router.get("/api/ai-orchestrator/metrics")
 async def ai_orchestrator_metrics():
     return {
@@ -32,6 +34,7 @@ async def ai_orchestrator_metrics():
         "averageLatency": 1240,
         "failedRequests": 3,
     }
+
 
 @router.post("/api/ai-orchestrator/reset")
 async def ai_orchestrator_reset(provider: str | None = None):

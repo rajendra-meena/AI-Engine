@@ -14,14 +14,20 @@ class TradePlanner:
     """Constructs a structured trade plan from all available data."""
 
     @staticmethod
-    def evaluate(score_result: dict[str, Any],
-                 confidence_result: dict[str, Any],
-                 risk_result: dict[str, Any],
-                 context_snap: dict[str, Any] | None,
-                 mtf_snap: dict[str, Any] | None,
-                 sr_snap: dict[str, Any] | None) -> dict[str, Any]:
+    def evaluate(
+        score_result: dict[str, Any],
+        confidence_result: dict[str, Any],
+        risk_result: dict[str, Any],
+        context_snap: dict[str, Any] | None,
+        mtf_snap: dict[str, Any] | None,
+        sr_snap: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         if not context_snap:
-            return {"direction": "NONE", "plan_valid": False, "reasoning": ["No context data"]}
+            return {
+                "direction": "NONE",
+                "plan_valid": False,
+                "reasoning": ["No context data"],
+            }
 
         direction = "NONE"
         reasoning = []
@@ -53,21 +59,50 @@ class TradePlanner:
         if sr_snap and direction != "NONE":
             nearest_s = sr_snap.get("nearest_support")
             nearest_r = sr_snap.get("nearest_resistance")
-            close = context_snap.get("indicator_snap", {}).get("candle_close") or \
-                   context_snap.get("timestamp", "")
+            close = context_snap.get("indicator_snap", {}).get(
+                "candle_close"
+            ) or context_snap.get("timestamp", "")
 
             if direction == "LONG":
-                entry_zone = {"type": "market", "price": "current", "zone": f"Above {nearest_s}"}
+                entry_zone = {
+                    "type": "market",
+                    "price": "current",
+                    "zone": f"Above {nearest_s}",
+                }
                 if nearest_s:
-                    sl_zone = {"type": "stop_loss", "price": nearest_s, "zone": f"Below {nearest_s}"}
+                    sl_zone = {
+                        "type": "stop_loss",
+                        "price": nearest_s,
+                        "zone": f"Below {nearest_s}",
+                    }
                 if nearest_r:
-                    target_zones = [{"type": "target_1", "price": nearest_r, "zone": f"Near {nearest_r}"}]
+                    target_zones = [
+                        {
+                            "type": "target_1",
+                            "price": nearest_r,
+                            "zone": f"Near {nearest_r}",
+                        }
+                    ]
             elif direction == "SHORT":
-                entry_zone = {"type": "market", "price": "current", "zone": f"Below {nearest_r}"}
+                entry_zone = {
+                    "type": "market",
+                    "price": "current",
+                    "zone": f"Below {nearest_r}",
+                }
                 if nearest_r:
-                    sl_zone = {"type": "stop_loss", "price": nearest_r, "zone": f"Above {nearest_r}"}
+                    sl_zone = {
+                        "type": "stop_loss",
+                        "price": nearest_r,
+                        "zone": f"Above {nearest_r}",
+                    }
                 if nearest_s:
-                    target_zones = [{"type": "target_1", "price": nearest_s, "zone": f"Near {nearest_s}"}]
+                    target_zones = [
+                        {
+                            "type": "target_1",
+                            "price": nearest_s,
+                            "zone": f"Near {nearest_s}",
+                        }
+                    ]
 
         # Risk-reward context
         rr_context = risk_result.get("risk_level", "MEDIUM")

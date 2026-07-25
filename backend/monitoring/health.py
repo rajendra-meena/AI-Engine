@@ -18,7 +18,9 @@ class HealthStatus:
     status: str = "healthy"  # healthy, degraded, unhealthy
     uptime_seconds: float = 0.0
     version: str = "1.0.0"
-    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    timestamp: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
     checks: dict[str, bool] = field(default_factory=dict)
     details: dict[str, Any] = field(default_factory=dict)
 
@@ -50,8 +52,12 @@ class HealthChecker:
         any_healthy = any(results.values())
 
         return HealthStatus(
-            status="healthy" if all_healthy else "degraded" if any_healthy else "unhealthy",
-            uptime_seconds=(datetime.now(timezone.utc) - self.start_time).total_seconds(),
+            status=(
+                "healthy" if all_healthy else "degraded" if any_healthy else "unhealthy"
+            ),
+            uptime_seconds=(
+                datetime.now(timezone.utc) - self.start_time
+            ).total_seconds(),
             checks=results,
             details=details,
         )

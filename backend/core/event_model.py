@@ -21,6 +21,7 @@ from typing import Any
 
 class EventPriority(str, Enum):
     """Priority levels for event queue ordering."""
+
     LOW = "LOW"
     NORMAL = "NORMAL"
     HIGH = "HIGH"
@@ -44,6 +45,7 @@ class Event:
     All fields are immutable after creation except for internal use.
     New modules should create events via the publisher helpers.
     """
+
     type: str
     """Event type string (matches core.events constants)."""
 
@@ -59,7 +61,11 @@ class Event:
     id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
     """Unique event identifier (12-char hex)."""
 
-    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat(timespec="milliseconds"))
+    timestamp: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat(
+            timespec="milliseconds"
+        )
+    )
     """ISO-8601 timestamp of when this event was created."""
 
     correlation_id: str = ""
@@ -73,7 +79,12 @@ class Event:
 
     # ── Internal (not part of the public event shape) ──
 
-    _created_ns: int = field(default_factory=lambda: int(datetime.now(timezone.utc).timestamp() * 1_000_000_000), repr=False)
+    _created_ns: int = field(
+        default_factory=lambda: int(
+            datetime.now(timezone.utc).timestamp() * 1_000_000_000
+        ),
+        repr=False,
+    )
     """Nanosecond-precision creation time for performance tracking."""
 
     def __lt__(self, other: Event) -> bool:

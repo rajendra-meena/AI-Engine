@@ -1,10 +1,19 @@
 """Angel One broker adapter."""
 
-from ..base import BaseBroker, BrokerOrder, BrokerPosition, BrokerHolding, BrokerFunds, BrokerOrderStatus
+from ..base import (
+    BaseBroker,
+    BrokerOrder,
+    BrokerPosition,
+    BrokerHolding,
+    BrokerFunds,
+    BrokerOrderStatus,
+)
 
 
 class AngelBroker(BaseBroker):
-    def __init__(self, api_key: str = "", client_id: str = "", password: str = "", totp: str = ""):
+    def __init__(
+        self, api_key: str = "", client_id: str = "", password: str = "", totp: str = ""
+    ):
         self.api_key = api_key
         self.client_id = client_id
         self._connected = False

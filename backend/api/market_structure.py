@@ -26,7 +26,9 @@ async def structure_status():
 
 
 @router.get("/api/structure/latest")
-async def structure_latest(symbol: str = Query("NIFTY 50"), interval: str = Query("15m")):
+async def structure_latest(
+    symbol: str = Query("NIFTY 50"), interval: str = Query("15m")
+):
     symbol = get_canonical_symbol(symbol)
     snap = _get().latest_snapshot(symbol, interval)
     if snap is None:

@@ -25,14 +25,15 @@ class MarketSnapshot:
     This is the primary model for broadcasting to WebSocket clients
     and for AI engine evaluation.
     """
+
     symbol: str
-    timestamp: str                           # ISO-8601
+    timestamp: str  # ISO-8601
     latest_price: float = 0.0
     latest_candle: Candle | None = None
     daily_candle: DailyCandle | None = None
     reference_levels: ReferenceLevels | None = None
     volume_data: VolumeData | None = None
-    session: str = ""                        # "PreMarket" / "Opening" / "Mid" / "Closing" / "Closed"
+    session: str = ""  # "PreMarket" / "Opening" / "Mid" / "Closing" / "Closed"
     provider_status: ProviderStatus | None = None
     change_percent: float = 0.0
     day_high: float = 0.0

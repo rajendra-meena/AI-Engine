@@ -31,7 +31,6 @@ from typing import Any, Callable, Coroutine
 from core.event_model import Event, EventPriority
 from utils.logger import log_info, log_warn, log_error
 
-
 # Type alias: an async callable that accepts an Event
 Handler = Callable[[Event], Coroutine[Any, Any, None]]
 
@@ -39,10 +38,13 @@ Handler = Callable[[Event], Coroutine[Any, Any, None]]
 @dataclass
 class SubscriberInfo:
     """Tracks a registered subscriber."""
+
     handler: Handler
     event_type: str
     name: str = ""
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
 
 
 class EventBus:
@@ -54,7 +56,9 @@ class EventBus:
     """
 
     def __init__(self, max_queue_size: int = 1000):
-        self._queue: asyncio.Queue[Event] = asyncio.PriorityQueue(maxsize=max_queue_size)
+        self._queue: asyncio.Queue[Event] = asyncio.PriorityQueue(
+            maxsize=max_queue_size
+        )
         self._subscribers: dict[str, list[SubscriberInfo]] = {}  # event_type → handlers
         self._dispatcher_task: asyncio.Task | None = None
         self._running = False
@@ -75,7 +79,9 @@ class EventBus:
             log_warn("EventBus already running")
             return
         self._running = True
-        self._dispatcher_task = asyncio.create_task(self._dispatch_loop(), name="eventbus-dispatcher")
+        self._dispatcher_task = asyncio.create_task(
+            self._dispatch_loop(), name="eventbus-dispatcher"
+        )
         log_info("EventBus started", max_queue_size=self._max_queue_size)
 
     async def stop(self):
@@ -99,7 +105,9 @@ class EventBus:
         Returns True if published, False if the queue was full (event dropped).
         """
         if not self._running:
-            log_warn("EventBus not running, dropping event", type=event.type, id=event.id)
+            log_warn(
+                "EventBus not running, dropping event", type=event.type, id=event.id
+            )
             self._total_dropped += 1
             return False
 
@@ -109,7 +117,12 @@ class EventBus:
             return True
         except asyncio.QueueFull:
             self._total_dropped += 1
-            log_warn("EventBus queue full, dropping event", type=event.type, id=event.id, queue_size=self._queue.qsize())
+            log_warn(
+                "EventBus queue full, dropping event",
+                type=event.type,
+                id=event.id,
+                queue_size=self._queue.qsize(),
+            )
             return False
 
     # ── Subscription ──
@@ -137,12 +150,15 @@ class EventBus:
             return
         before = len(self._subscribers[event_type])
         self._subscribers[event_type] = [
-            s for s in self._subscribers[event_type]
-            if s.handler is not handler
+            s for s in self._subscribers[event_type] if s.handler is not handler
         ]
         removed = before - len(self._subscribers[event_type])
         if removed:
-            log_info("Subscriber unsubscribed", event_type=event_type, handler=handler.__name__)
+            log_info(
+                "Subscriber unsubscribed",
+                event_type=event_type,
+                handler=handler.__name__,
+            )
 
     # ── Dispatch ──
 
@@ -180,7 +196,9 @@ class EventBus:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
-        elapsed_ns = int(datetime.now(timezone.utc).timestamp() * 1_000_000_000) - start_ns
+        elapsed_ns = (
+            int(datetime.now(timezone.utc).timestamp() * 1_000_000_000) - start_ns
+        )
         self._total_processing_time_ns += elapsed_ns
 
     async def _safe_call_handler(self, sub: SubscriberInfo, event: Event):
@@ -227,9 +245,11 @@ class EventBus:
         result = []
         for event_type, subs in self._subscribers.items():
             for sub in subs:
-                result.append({
-                    "event_type": event_type,
-                    "handler": sub.name,
-                    "created_at": sub.created_at,
-                })
+                result.append(
+                    {
+                        "event_type": event_type,
+                        "handler": sub.name,
+                        "created_at": sub.created_at,
+                    }
+                )
         return result

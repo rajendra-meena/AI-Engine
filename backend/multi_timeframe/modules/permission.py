@@ -9,7 +9,9 @@ class PermissionAnalyzer:
     """Evaluates trading permission from alignment, condition, and HTF bias."""
 
     @staticmethod
-    def evaluate(alignment: dict[str, Any], condition: str, contexts: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    def evaluate(
+        alignment: dict[str, Any], condition: str, contexts: dict[str, dict[str, Any]]
+    ) -> dict[str, Any]:
         score = alignment.get("score", 0)
         level = alignment.get("level", "MIXED")
         htf_bias = alignment.get("htf_bias", "NEUTRAL")

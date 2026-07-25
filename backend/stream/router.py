@@ -55,12 +55,15 @@ ConsumerHandler = Callable[[dict[str, Any], str, str], Coroutine[Any, Any, None]
 @dataclass
 class Consumer:
     """A registered stream consumer with its filter criteria."""
+
     name: str
     handler: ConsumerHandler
-    symbols: set[str] | None = None    # None = all symbols
-    channels: set[str] | None = None   # None = all channels
+    symbols: set[str] | None = None  # None = all symbols
+    channels: set[str] | None = None  # None = all channels
     mode: StreamMode = StreamMode.ALL
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
     messages_routed: int = 0
     last_routed_at: str | None = None
     errors: int = 0
@@ -69,12 +72,15 @@ class Consumer:
 @dataclass
 class StreamStats:
     """Aggregate routing statistics."""
+
     total_routed: int = 0
     total_dropped: int = 0
     total_errors: int = 0
     per_channel: dict[str, int] = field(default_factory=dict)
     per_symbol: dict[str, int] = field(default_factory=dict)
-    start_time: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    start_time: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -109,13 +115,17 @@ class StreamRouter:
             return
         self._running = True
         self._event_bus.subscribe(NEW_TICK, self._on_new_tick, name="stream_router")
-        await self._publish_event(STREAM_ROUTER_STARTED, {"start_time": self._stats.start_time})
+        await self._publish_event(
+            STREAM_ROUTER_STARTED, {"start_time": self._stats.start_time}
+        )
         log_info("StreamRouter started")
 
     async def stop(self):
         """Stop the router."""
         self._running = False
-        await self._publish_event(STREAM_ROUTER_STOPPED, {"stats": self._stats.to_dict()})
+        await self._publish_event(
+            STREAM_ROUTER_STOPPED, {"stats": self._stats.to_dict()}
+        )
         log_info("StreamRouter stopped", routed=self._stats.total_routed)
 
     # ── Consumer management ──
@@ -152,7 +162,13 @@ class StreamRouter:
             channels=set(channels) if channels else None,
             mode=StreamMode(mode),
         )
-        log_info("Consumer registered", name=name, symbols=symbols, channels=channels, mode=mode)
+        log_info(
+            "Consumer registered",
+            name=name,
+            symbols=symbols,
+            channels=channels,
+            mode=mode,
+        )
         return True
 
     def unregister_consumer(self, name: str) -> bool:
@@ -215,12 +231,16 @@ class StreamRouter:
             except Exception as e:
                 consumer.errors += 1
                 self._stats.total_errors += 1
-                log_error("StreamRouter consumer error", consumer=consumer.name, error=str(e))
+                log_error(
+                    "StreamRouter consumer error", consumer=consumer.name, error=str(e)
+                )
 
         self._stats.total_routed += routed
 
     @staticmethod
-    def _matches_consumer(consumer: Consumer, symbol: str, channel: str, mode: str) -> bool:
+    def _matches_consumer(
+        consumer: Consumer, symbol: str, channel: str, mode: str
+    ) -> bool:
         """Check if a message should be routed to a consumer based on its filters."""
         # Mode filter
         if consumer.mode != StreamMode.ALL:

@@ -23,14 +23,20 @@ from models.candle import Candle
 class BreakoutPattern:
     name: str
     direction: str  # "bullish" or "bearish"
-    strength: str   # "weak", "moderate", "strong"
+    strength: str  # "weak", "moderate", "strong"
     price: float = 0.0
     time: str = ""
     description: str = ""
 
     def to_dict(self) -> dict[str, Any]:
-        return {"name": self.name, "direction": self.direction, "strength": self.strength,
-                "price": self.price, "time": self.time, "description": self.description}
+        return {
+            "name": self.name,
+            "direction": self.direction,
+            "strength": self.strength,
+            "price": self.price,
+            "time": self.time,
+            "description": self.description,
+        }
 
 
 class BreakoutPatternDetector:
@@ -61,43 +67,73 @@ class BreakoutPatternDetector:
         range_size = range_high - range_low
 
         if candle.close > range_high:
-            new_patterns.append(BreakoutPattern(
-                name="range_breakout", direction="bullish", strength="strong",
-                price=candle.close, time=candle.time,
-                description=f"Range breakout above {range_high:.1f}"))
+            new_patterns.append(
+                BreakoutPattern(
+                    name="range_breakout",
+                    direction="bullish",
+                    strength="strong",
+                    price=candle.close,
+                    time=candle.time,
+                    description=f"Range breakout above {range_high:.1f}",
+                )
+            )
         elif candle.close < range_low:
-            new_patterns.append(BreakoutPattern(
-                name="range_breakdown", direction="bearish", strength="strong",
-                price=candle.close, time=candle.time,
-                description=f"Range breakdown below {range_low:.1f}"))
+            new_patterns.append(
+                BreakoutPattern(
+                    name="range_breakdown",
+                    direction="bearish",
+                    strength="strong",
+                    price=candle.close,
+                    time=candle.time,
+                    description=f"Range breakdown below {range_low:.1f}",
+                )
+            )
 
         # NR7: narrowest range in 7 candles
         if len(lst) >= 7:
             ranges = [abs(c.high - c.low) for c in lst[-7:]]
             if ranges[-1] == min(ranges):
-                new_patterns.append(BreakoutPattern(
-                    name="nr7", direction="neutral", strength="moderate",
-                    price=candle.close, time=candle.time,
-                    description="NR7 — narrow range, potential expansion"))
+                new_patterns.append(
+                    BreakoutPattern(
+                        name="nr7",
+                        direction="neutral",
+                        strength="moderate",
+                        price=candle.close,
+                        time=candle.time,
+                        description="NR7 — narrow range, potential expansion",
+                    )
+                )
 
         # Volatility Contraction (comparing recent ranges)
         if len(lst) >= 10:
             recent = [c.high - c.low for c in lst[-5:]]
             older = [c.high - c.low for c in lst[-10:-5]]
             if sum(recent) < sum(older) * 0.7:
-                new_patterns.append(BreakoutPattern(
-                    name="volatility_contraction", direction="neutral", strength="moderate",
-                    price=candle.close, time=candle.time,
-                    description="Volatility contracting — potential breakout"))
+                new_patterns.append(
+                    BreakoutPattern(
+                        name="volatility_contraction",
+                        direction="neutral",
+                        strength="moderate",
+                        price=candle.close,
+                        time=candle.time,
+                        description="Volatility contracting — potential breakout",
+                    )
+                )
 
         # Flag/Pennant (consolidation after strong move)
         if len(lst) >= 6:
             body_sizes = [abs(c.close - c.open) for c in lst[-5:]]
             if sum(body_sizes) < sum(body_sizes[:3]) * 0.8 and range_size > 0:
-                new_patterns.append(BreakoutPattern(
-                    name="flag_pennant", direction="neutral", strength="moderate",
-                    price=candle.close, time=candle.time,
-                    description="Possible flag/pennant consolidation"))
+                new_patterns.append(
+                    BreakoutPattern(
+                        name="flag_pennant",
+                        direction="neutral",
+                        strength="moderate",
+                        price=candle.close,
+                        time=candle.time,
+                        description="Possible flag/pennant consolidation",
+                    )
+                )
 
         if new_patterns:
             self._patterns.extend(new_patterns)

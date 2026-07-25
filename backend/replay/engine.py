@@ -52,6 +52,7 @@ REPLAY_SPEEDS = [1, 2, 5, 10, 30, 60, 100]
 @dataclass
 class ReplaySession:
     """Tracks the state of a single replay session."""
+
     id: str
     symbol: str
     interval: str
@@ -60,7 +61,9 @@ class ReplaySession:
     state: ReplayState = ReplayState.IDLE
     speed: int = 1
     candles: list[dict[str, Any]] = field(default_factory=list)
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
     started_at: str | None = None
     finished_at: str | None = None
     last_event_time: str | None = None
@@ -125,7 +128,12 @@ class ReplayEngine:
         """
         await self.stop()
 
-        log_info("Replay: fetching historical data", symbol=symbol, interval=interval, days=days)
+        log_info(
+            "Replay: fetching historical data",
+            symbol=symbol,
+            interval=interval,
+            days=days,
+        )
 
         result = await self._service.get_intraday(symbol, interval, days)
         candles = result.get("candles", [])
@@ -151,14 +159,19 @@ class ReplayEngine:
             name=f"replay-{session_id[:6]}",
         )
 
-        await self._publish_event(REPLAY_STARTED, {
-            "session_id": session_id,
-            "symbol": symbol,
-            "interval": interval,
-            "total_candles": len(candles),
-        })
+        await self._publish_event(
+            REPLAY_STARTED,
+            {
+                "session_id": session_id,
+                "symbol": symbol,
+                "interval": interval,
+                "total_candles": len(candles),
+            },
+        )
 
-        log_info("Replay started", session_id=session_id, symbol=symbol, candles=len(candles))
+        log_info(
+            "Replay started", session_id=session_id, symbol=symbol, candles=len(candles)
+        )
         return self._session
 
     async def stop(self) -> dict[str, Any] | None:
@@ -219,11 +232,14 @@ class ReplayEngine:
         target = max(0, min(target, self._session.total_candles - 1))
         self._session.current_index = target
 
-        await self._publish_event(REPLAY_SEEK, {
-            "session_id": self._session.id,
-            "current_index": target,
-            "progress_percent": self._session.progress_percent,
-        })
+        await self._publish_event(
+            REPLAY_SEEK,
+            {
+                "session_id": self._session.id,
+                "current_index": target,
+                "progress_percent": self._session.progress_percent,
+            },
+        )
 
         log_info("Replay seek", session_id=self._session.id, index=target)
         return target
@@ -233,10 +249,13 @@ class ReplayEngine:
         speed = max(1, min(speed, 100))
         if self._session:
             self._session.speed = speed
-            await self._publish_event(REPLAY_SPEED_CHANGED, {
-                "session_id": self._session.id,
-                "speed": speed,
-            })
+            await self._publish_event(
+                REPLAY_SPEED_CHANGED,
+                {
+                    "session_id": self._session.id,
+                    "speed": speed,
+                },
+            )
             log_info("Replay speed changed", session_id=self._session.id, speed=speed)
         return speed
 
@@ -270,17 +289,22 @@ class ReplayEngine:
                 candle = session.candles[session.current_index]
 
                 # Publish candle event
-                await self._publish_event(NEW_HISTORICAL_CANDLE, {
-                    "session_id": session.id,
-                    "symbol": session.symbol,
-                    "interval": session.interval,
-                    "index": session.current_index,
-                    "total": session.total_candles,
-                    "progress_percent": session.progress_percent,
-                    "candle": candle,
-                })
+                await self._publish_event(
+                    NEW_HISTORICAL_CANDLE,
+                    {
+                        "session_id": session.id,
+                        "symbol": session.symbol,
+                        "interval": session.interval,
+                        "index": session.current_index,
+                        "total": session.total_candles,
+                        "progress_percent": session.progress_percent,
+                        "candle": candle,
+                    },
+                )
 
-                session.last_event_time = candle.get("time", datetime.now(timezone.utc).isoformat())
+                session.last_event_time = candle.get(
+                    "time", datetime.now(timezone.utc).isoformat()
+                )
                 session.current_index += 1
 
                 # Wait for the real-time interval divided by speed
@@ -291,13 +315,17 @@ class ReplayEngine:
             session.state = ReplayState.FINISHED
             session.finished_at = datetime.now(timezone.utc).isoformat()
             await self._publish_event(REPLAY_FINISHED, session.to_dict())
-            log_info("Replay finished", session_id=session.id, candles=session.total_candles)
+            log_info(
+                "Replay finished", session_id=session.id, candles=session.total_candles
+            )
 
         except asyncio.CancelledError:
             raise
         except Exception as e:
             log_error("Replay error", session_id=session.id, error=str(e))
-            await self._publish_event("replay_error", {"session_id": session.id, "error": str(e)})
+            await self._publish_event(
+                "replay_error", {"session_id": session.id, "error": str(e)}
+            )
 
     # ── Internal ──
 

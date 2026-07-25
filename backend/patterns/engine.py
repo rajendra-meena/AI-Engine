@@ -46,7 +46,9 @@ class PatternUnit:
 
         cs = self.candle.update(candle)
         bp = self.breakout.update(candle)
-        cp = self.chart.update(candle, self._latest_swings_high, self._latest_swings_low)
+        cp = self.chart.update(
+            candle, self._latest_swings_high, self._latest_swings_low
+        )
 
         cs_dicts = [p.to_dict() for p in cs]
         cp_dicts = [p.to_dict() for p in cp]
@@ -65,7 +67,11 @@ class PatternUnit:
             breakout_patterns=bp_dicts,
             strongest_pattern=strongest,
             pattern_direction=direction,
-            confidence="high" if len(all_patterns) >= 3 else "medium" if all_patterns else "low",
+            confidence=(
+                "high"
+                if len(all_patterns) >= 3
+                else "medium" if all_patterns else "low"
+            ),
             total_count=len(all_patterns),
         )
         self.snapshots.append(snap)
@@ -78,7 +84,10 @@ class PatternUnit:
     def _find_strongest(patterns: list[dict]) -> str:
         if not patterns:
             return ""
-        best = max(patterns, key=lambda p: _PATTERN_STRENGTH_ORDER.get(p.get("strength", "weak"), 0))
+        best = max(
+            patterns,
+            key=lambda p: _PATTERN_STRENGTH_ORDER.get(p.get("strength", "weak"), 0),
+        )
         return best.get("name", "")
 
     @staticmethod
@@ -105,15 +114,20 @@ class PatternEngine:
     def __init__(self, event_bus: EventBus):
         self._event_bus = event_bus
         self._units: dict[tuple[str, str], PatternUnit] = {}
-        self._stats = {"total_processed": 0, "total_errors": 0,
-                       "start_time": datetime.now(timezone.utc).isoformat()}
+        self._stats = {
+            "total_processed": 0,
+            "total_errors": 0,
+            "start_time": datetime.now(timezone.utc).isoformat(),
+        }
         self._running = False
 
     async def start(self):
         if self._running:
             return
         self._running = True
-        self._event_bus.subscribe(CANDLE_CLOSED, self._on_candle_closed, name="pattern_engine")
+        self._event_bus.subscribe(
+            CANDLE_CLOSED, self._on_candle_closed, name="pattern_engine"
+        )
         log_info("PatternEngine started")
 
     async def stop(self):
@@ -137,8 +151,16 @@ class PatternEngine:
             unit = self._units[key]
 
             # Feed swings if available in payload
-            swings_high = [s.get("price", 0) for s in payload.get("swings", []) if s.get("type") == "high"]
-            swings_low = [s.get("price", 0) for s in payload.get("swings", []) if s.get("type") == "low"]
+            swings_high = [
+                s.get("price", 0)
+                for s in payload.get("swings", [])
+                if s.get("type") == "high"
+            ]
+            swings_low = [
+                s.get("price", 0)
+                for s in payload.get("swings", [])
+                if s.get("type") == "low"
+            ]
             if swings_high or swings_low:
                 unit.update_swings(swings_high, swings_low)
 
@@ -149,7 +171,10 @@ class PatternEngine:
 
             # Also publish BREAKOUT_DETECTED for breakout patterns
             for p in all_patterns:
-                if p.get("name", "").startswith("range_break") or p.get("name") == "nr7":
+                if (
+                    p.get("name", "").startswith("range_break")
+                    or p.get("name") == "nr7"
+                ):
                     await self._publish(BREAKOUT_DETECTED, p)
 
         except Exception as e:
@@ -168,4 +193,6 @@ class PatternEngine:
         return s
 
     async def _publish(self, event_type: str, payload: dict):
-        await self._event_bus.publish(Event(type=event_type, source="pattern_engine", payload=payload))
+        await self._event_bus.publish(
+            Event(type=event_type, source="pattern_engine", payload=payload)
+        )

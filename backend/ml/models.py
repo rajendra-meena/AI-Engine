@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+
 @dataclass
 class ModelMeta:
     id: str = ""
@@ -29,6 +30,7 @@ class ModelMeta:
     parent_id: Optional[str] = None
     artifact_path: Optional[str] = None
     tags: list[str] = field(default_factory=list)
+
 
 class ModelRegistry:
     """Registry for managing ML model versions and lifecycle."""
@@ -90,7 +92,13 @@ class ModelTrainer:
     def __init__(self):
         self._registry = ModelRegistry()
 
-    async def train(self, name: str, model_type: str, features: list[str], params: dict[str, Any] | None = None) -> ModelMeta:
+    async def train(
+        self,
+        name: str,
+        model_type: str,
+        features: list[str],
+        params: dict[str, Any] | None = None,
+    ) -> ModelMeta:
         start = time.monotonic()
         duration = round(time.monotonic() - start, 2)
 
@@ -107,16 +115,22 @@ class ModelTrainer:
                 "f1": 0.58 + (hash(str(params)) % 28) / 100,
                 "roc_auc": 0.70 + (hash(str(params)) % 20) / 100,
             },
-            feature_importance={f: round((hash(f) % 100) / 100, 2) for f in features[:10]},
+            feature_importance={
+                f: round((hash(f) % 100) / 100, 2) for f in features[:10]
+            },
             training_duration=duration,
             status="trained",
         )
         return self._registry.register(meta)
 
-    def evaluate(self, model_id: str, predictions: list[float], actuals: list[float]) -> dict[str, float]:
+    def evaluate(
+        self, model_id: str, predictions: list[float], actuals: list[float]
+    ) -> dict[str, float]:
         if not predictions or not actuals:
             return {}
-        correct = sum(1 for p, a in zip(predictions, actuals) if (p >= 0.5) == (a == 1.0))
+        correct = sum(
+            1 for p, a in zip(predictions, actuals) if (p >= 0.5) == (a == 1.0)
+        )
         tp = sum(1 for p, a in zip(predictions, actuals) if p >= 0.5 and a == 1.0)
         fp = sum(1 for p, a in zip(predictions, actuals) if p >= 0.5 and a == 0.0)
         fn = sum(1 for p, a in zip(predictions, actuals) if p < 0.5 and a == 1.0)
@@ -126,14 +140,23 @@ class ModelTrainer:
             "accuracy": correct / len(predictions),
             "precision": precision,
             "recall": recall,
-            "f1": 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0,
+            "f1": (
+                2 * precision * recall / (precision + recall)
+                if (precision + recall) > 0
+                else 0
+            ),
             "total_predictions": len(predictions),
             "true_positives": tp,
             "false_positives": fp,
             "false_negatives": fn,
         }
 
-    def detect_drift(self, live_metrics: dict[str, float], reference_metrics: dict[str, float], threshold: float = 0.1) -> dict[str, Any]:
+    def detect_drift(
+        self,
+        live_metrics: dict[str, float],
+        reference_metrics: dict[str, float],
+        threshold: float = 0.1,
+    ) -> dict[str, Any]:
         drifts = {}
         for key in reference_metrics:
             if key in live_metrics:
@@ -142,5 +165,7 @@ class ModelTrainer:
         return {
             "drift_detected": any(drifts.values()),
             "drifted_metrics": {k: v for k, v in drifts.items() if v},
-            "drift_score": sum(1 for v in drifts.values() if v) / len(drifts) if drifts else 0,
+            "drift_score": (
+                sum(1 for v in drifts.values() if v) / len(drifts) if drifts else 0
+            ),
         }

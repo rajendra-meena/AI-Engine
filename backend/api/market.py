@@ -37,12 +37,17 @@ async def get_data(
     service = _get_service()
     today = date.today()
     end_date = date.fromisoformat(end) if end else today
-    start_date = date.fromisoformat(start) if start else end_date - timedelta(days=DAILY_LOOKBACK_DEFAULT_DAYS)
+    start_date = (
+        date.fromisoformat(start)
+        if start
+        else end_date - timedelta(days=DAILY_LOOKBACK_DEFAULT_DAYS)
+    )
 
     try:
         return await service.get_daily(symbol, start_date, end_date)
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         return {"symbol": symbol, "data": [], "error": str(e)}
 
@@ -50,7 +55,9 @@ async def get_data(
 @router.get("/api/intraday")
 async def get_intraday(
     symbol: str = Query("NIFTY 50", description="Index display name"),
-    interval: str = Query("15m", description="Intraday interval: 1m, 2m, 5m, 15m, 30m, 60m"),
+    interval: str = Query(
+        "15m", description="Intraday interval: 1m, 2m, 5m, 15m, 30m, 60m"
+    ),
     days: int = Query(3, description="Number of days of intraday data"),
 ):
     """Fetch intraday candles with disk caching."""
@@ -59,6 +66,7 @@ async def get_intraday(
         return await service.get_intraday(symbol, interval, days)
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         return {"symbol": symbol, "candles": [], "error": str(e)}
 

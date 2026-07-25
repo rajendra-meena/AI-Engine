@@ -29,7 +29,9 @@ class AlignmentAnalyzer:
                 weighted_score += BIAS_SCORE_MAP.get(bias, 0) * w
                 total_weight += w
 
-        aligned_score = round(weighted_score / total_weight, 3) if total_weight > 0 else 0.0
+        aligned_score = (
+            round(weighted_score / total_weight, 3) if total_weight > 0 else 0.0
+        )
 
         # Level classification
         abs_score = abs(aligned_score)
@@ -47,8 +49,16 @@ class AlignmentAnalyzer:
         # Check HTF vs LTF conflict
         high_tf_biases = [biases[tf] for tf in HIERARCHY[:3] if tf in biases]
         low_tf_biases = [biases[tf] for tf in HIERARCHY[-3:] if tf in biases]
-        htf_main = max(set(high_tf_biases), key=high_tf_biases.count) if high_tf_biases else "NEUTRAL"
-        ltf_main = max(set(low_tf_biases), key=low_tf_biases.count) if low_tf_biases else "NEUTRAL"
+        htf_main = (
+            max(set(high_tf_biases), key=high_tf_biases.count)
+            if high_tf_biases
+            else "NEUTRAL"
+        )
+        ltf_main = (
+            max(set(low_tf_biases), key=low_tf_biases.count)
+            if low_tf_biases
+            else "NEUTRAL"
+        )
 
         if htf_main != ltf_main and htf_main != "NEUTRAL" and ltf_main != "NEUTRAL":
             if htf_main != aligned_score > 0:

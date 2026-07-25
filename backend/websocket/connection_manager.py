@@ -22,6 +22,7 @@ from fastapi import WebSocket
 @dataclass
 class Client:
     """Represents a single connected WebSocket client."""
+
     id: str
     websocket: WebSocket
     connected_at: float = field(default_factory=time.time)
@@ -115,7 +116,8 @@ class ConnectionManager:
         """Send a message to clients subscribed to a specific symbol."""
         async with self._lock:
             targets = [
-                cid for cid, c in self._clients.items()
+                cid
+                for cid, c in self._clients.items()
                 if symbol in c.subscribed_symbols
             ]
 
@@ -129,8 +131,7 @@ class ConnectionManager:
         """Send a message to clients subscribed to a specific channel."""
         async with self._lock:
             targets = [
-                cid for cid, c in self._clients.items()
-                if channel in c.subscriptions
+                cid for cid, c in self._clients.items() if channel in c.subscriptions
             ]
 
         success_count = 0
@@ -207,7 +208,9 @@ class ConnectionManager:
             total_sent = sum(c.messages_sent for c in self._clients.values())
             total_recv = sum(c.messages_received for c in self._clients.values())
             total_subs = sum(len(c.subscriptions) for c in self._clients.values())
-            total_symbol_subs = sum(len(c.subscribed_symbols) for c in self._clients.values())
+            total_symbol_subs = sum(
+                len(c.subscribed_symbols) for c in self._clients.values()
+            )
             uptimes = [c.uptime_seconds for c in self._clients.values()]
 
         return {
@@ -216,7 +219,9 @@ class ConnectionManager:
             "total_messages_received": total_recv,
             "total_subscriptions": total_subs,
             "total_symbol_subscriptions": total_symbol_subs,
-            "avg_uptime_seconds": round(sum(uptimes) / len(uptimes), 1) if uptimes else 0.0,
+            "avg_uptime_seconds": (
+                round(sum(uptimes) / len(uptimes), 1) if uptimes else 0.0
+            ),
             "max_uptime_seconds": round(max(uptimes), 1) if uptimes else 0.0,
         }
 
@@ -224,7 +229,8 @@ class ConnectionManager:
         """Disconnect clients that haven't sent a heartbeat within timeout."""
         async with self._lock:
             idle = [
-                cid for cid, c in self._clients.items()
+                cid
+                for cid, c in self._clients.items()
                 if (time.time() - c.last_heartbeat) > timeout
             ]
             for cid in idle:

@@ -13,7 +13,12 @@ from typing import Any
 from core.event_bus import EventBus, Event
 from candles.events import CANDLE_CLOSED
 from market_structure.snapshot import MarketStructureSnapshot
-from market_structure.events import STRUCTURE_UPDATED, NEW_SWING, BOS_DETECTED, CHOCH_DETECTED
+from market_structure.events import (
+    STRUCTURE_UPDATED,
+    NEW_SWING,
+    BOS_DETECTED,
+    CHOCH_DETECTED,
+)
 from market_structure.modules.swing_detector import SwingDetector
 from market_structure.modules.trend_detector import TrendDetector
 from market_structure.modules.structure_detector import StructureDetector
@@ -48,7 +53,9 @@ class MarketStructureUnit:
         self.trend.update(self.swing.recent_swings(10))
 
         # 3. Structure
-        new_structure = self.structure.update(candle, self.trend.get_info(), self.swing.recent_swings(10))
+        new_structure = self.structure.update(
+            candle, self.trend.get_info(), self.swing.recent_swings(10)
+        )
 
         # 4. Liquidity
         new_liquidity = self.liquidity.update(candle)
@@ -76,8 +83,16 @@ class MarketStructureUnit:
             impulse_active=self.structure.get_info().get("impulse_active", False),
             pullback_active=self.structure.get_info().get("pullback_active", False),
             consolidation_bars=self.structure.get_info().get("consolidation_bars", 0),
-            equal_highs=[z.price for z in self.liquidity.liquidity_above(candle.close)][-5:] if new_liquidity else None,
-            equal_lows=[z.price for z in self.liquidity.liquidity_below(candle.close)][-5:] if new_liquidity else None,
+            equal_highs=(
+                [z.price for z in self.liquidity.liquidity_above(candle.close)][-5:]
+                if new_liquidity
+                else None
+            ),
+            equal_lows=(
+                [z.price for z in self.liquidity.liquidity_below(candle.close)][-5:]
+                if new_liquidity
+                else None
+            ),
             liquidity_sweeps=self.liquidity.get_info().get("sweeps", 0),
             valid_structure=self.swing.swings_count >= 2,
         )
@@ -104,7 +119,8 @@ class MarketStructureEngine:
         self._event_bus = event_bus
         self._units: dict[tuple[str, str], MarketStructureUnit] = {}
         self._stats = {
-            "total_processed": 0, "total_errors": 0,
+            "total_processed": 0,
+            "total_errors": 0,
             "start_time": datetime.now(timezone.utc).isoformat(),
         }
         self._running = False
@@ -113,7 +129,9 @@ class MarketStructureEngine:
         if self._running:
             return
         self._running = True
-        self._event_bus.subscribe(CANDLE_CLOSED, self._on_candle_closed, name="market_structure_engine")
+        self._event_bus.subscribe(
+            CANDLE_CLOSED, self._on_candle_closed, name="market_structure_engine"
+        )
         log_info("MarketStructureEngine started")
 
     async def stop(self):
@@ -166,4 +184,6 @@ class MarketStructureEngine:
         return s
 
     async def _publish(self, event_type: str, payload: dict):
-        await self._event_bus.publish(Event(type=event_type, source="market_structure_engine", payload=payload))
+        await self._event_bus.publish(
+            Event(type=event_type, source="market_structure_engine", payload=payload)
+        )

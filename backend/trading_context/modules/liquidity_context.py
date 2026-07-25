@@ -28,4 +28,9 @@ class LiquidityContext:
         else:
             state = "BALANCED"
 
-        return {"state": state, "sweeps": sweeps, "equal_highs": len(equal_highs), "equal_lows": len(equal_lows)}
+        return {
+            "state": state,
+            "sweeps": sweeps,
+            "equal_highs": len(equal_highs),
+            "equal_lows": len(equal_lows),
+        }

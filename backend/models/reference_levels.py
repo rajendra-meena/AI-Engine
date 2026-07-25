@@ -18,6 +18,7 @@ class ReferenceLevels:
 
     All values computed from the most recent trading days.
     """
+
     symbol: str = ""
     prev_day_high: float = 0.0
     prev_day_low: float = 0.0
@@ -52,11 +53,17 @@ class ReferenceLevels:
             symbol=data.get("symbol", ""),
             prev_day_high=float(data.get("prevDayHigh", data.get("prev_day_high", 0))),
             prev_day_low=float(data.get("prevDayLow", data.get("prev_day_low", 0))),
-            prev_day_close=float(data.get("prevDayClose", data.get("prev_day_close", 0))),
+            prev_day_close=float(
+                data.get("prevDayClose", data.get("prev_day_close", 0))
+            ),
             prev_day_open=float(data.get("prevDayOpen", data.get("prev_day_open", 0))),
             weekly_high=float(data.get("weeklyHigh", data.get("weekly_high", 0))),
             weekly_low=float(data.get("weeklyLow", data.get("weekly_low", 0))),
-            prev_day_range=float(data.get("prevDayRange", data.get("prev_day_range", 0))),
-            prev_day_midpoint=float(data.get("prevDayMidpoint", data.get("prev_day_midpoint", 0))),
+            prev_day_range=float(
+                data.get("prevDayRange", data.get("prev_day_range", 0))
+            ),
+            prev_day_midpoint=float(
+                data.get("prevDayMidpoint", data.get("prev_day_midpoint", 0))
+            ),
             prev_day_vwap=float(data.get("prevDayVWAP", data.get("prev_day_vwap", 0))),
         )

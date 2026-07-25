@@ -12,12 +12,14 @@ class Orchestrator:
     """Produces the final DecisionSnapshot from sub-engine outputs."""
 
     @staticmethod
-    def orchestrate(score_result: dict[str, Any],
-                    confidence_result: dict[str, Any],
-                    risk_result: dict[str, Any],
-                    trade_plan: dict[str, Any],
-                    context_snap: dict[str, Any] | None,
-                    mtf_snap: dict[str, Any] | None) -> dict[str, Any]:
+    def orchestrate(
+        score_result: dict[str, Any],
+        confidence_result: dict[str, Any],
+        risk_result: dict[str, Any],
+        trade_plan: dict[str, Any],
+        context_snap: dict[str, Any] | None,
+        mtf_snap: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         score = score_result.get("score", 0)
         confidence = confidence_result.get("confidence", 0)
         risk_level = risk_result.get("risk_level", "EXTREME")
@@ -36,13 +38,29 @@ class Orchestrator:
         if not plan_valid:
             all_warnings.append("No valid trade plan")
 
-        if score >= 60 and confidence >= 60 and risk_level in ("LOW", "MEDIUM") and plan_valid:
+        if (
+            score >= 60
+            and confidence >= 60
+            and risk_level in ("LOW", "MEDIUM")
+            and plan_valid
+        ):
             decision = "HIGH_CONVICTION"
-            all_reasoning.append(f"High conviction: score={score}, confidence={confidence}")
-        elif score >= 50 and confidence >= 50 and risk_level in ("LOW", "MEDIUM", "HIGH") and plan_valid:
+            all_reasoning.append(
+                f"High conviction: score={score}, confidence={confidence}"
+            )
+        elif (
+            score >= 50
+            and confidence >= 50
+            and risk_level in ("LOW", "MEDIUM", "HIGH")
+            and plan_valid
+        ):
             decision = "MODERATE"
-            all_reasoning.append(f"Moderate: score={score}, confidence={confidence}, risk={risk_level}")
-        elif score >= 40 and confidence >= 40 and risk_level != "EXTREME" and plan_valid:
+            all_reasoning.append(
+                f"Moderate: score={score}, confidence={confidence}, risk={risk_level}"
+            )
+        elif (
+            score >= 40 and confidence >= 40 and risk_level != "EXTREME" and plan_valid
+        ):
             decision = "LOW_CONVICTION"
             all_reasoning.append(f"Low: score={score}, confidence={confidence}")
         else:

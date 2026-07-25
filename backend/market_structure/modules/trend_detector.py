@@ -83,10 +83,14 @@ class TrendDetector:
         if self._direction != TrendDirection.RANGING:
             if self._last_hh is not None and self._last_hl is not None:
                 diff_hh = abs(self._last_hh - (self._last_hl or self._last_hh))
-                self._strength = TrendStrength.STRONG if diff_hh > 0 else TrendStrength.MODERATE
+                self._strength = (
+                    TrendStrength.STRONG if diff_hh > 0 else TrendStrength.MODERATE
+                )
             elif self._last_lh is not None and self._last_ll is not None:
                 diff_ll = abs(self._last_lh - (self._last_ll or self._last_lh))
-                self._strength = TrendStrength.STRONG if diff_ll > 0 else TrendStrength.MODERATE
+                self._strength = (
+                    TrendStrength.STRONG if diff_ll > 0 else TrendStrength.MODERATE
+                )
 
         # Age and changes
         if self._direction != prev_direction:

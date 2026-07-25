@@ -15,6 +15,7 @@ from typing import Any
 
 class SessionType(str, Enum):
     """Market session phase."""
+
     PRE_MARKET = "PreMarket"
     OPENING = "Opening"
     MID = "Mid"
@@ -25,6 +26,7 @@ class SessionType(str, Enum):
 @dataclass(frozen=True)
 class MarketSession:
     """Current market session information."""
+
     session: SessionType = SessionType.CLOSED
     is_open: bool = False
     minutes_from_open: int = 0
@@ -42,8 +44,9 @@ class MarketSession:
 @dataclass(frozen=True)
 class TimeframeInfo:
     """Metadata about a chart interval/timeframe."""
-    key: str = ""                     # e.g. "15m"
-    label: str = ""                   # e.g. "15 min"
+
+    key: str = ""  # e.g. "15m"
+    label: str = ""  # e.g. "15 min"
     minutes: int = 0
     seconds: int = 0
     is_intraday: bool = True
@@ -63,12 +66,15 @@ class PriceLevel:
     """
     A price level with type classification (support, resistance, pivot, etc.).
     """
+
     price: float = 0.0
-    label: str = ""                   # e.g. "R1", "S1", "Prev Day High"
-    level_type: str = ""              # "support", "resistance", "pivot", "supply_zone", "demand_zone"
-    strength: str = ""                # "WEAK", "MODERATE", "STRONG", "MAJOR"
-    zone_high: float | None = None   # For zones: upper boundary
-    zone_low: float | None = None    # For zones: lower boundary
+    label: str = ""  # e.g. "R1", "S1", "Prev Day High"
+    level_type: str = (
+        ""  # "support", "resistance", "pivot", "supply_zone", "demand_zone"
+    )
+    strength: str = ""  # "WEAK", "MODERATE", "STRONG", "MAJOR"
+    zone_high: float | None = None  # For zones: upper boundary
+    zone_low: float | None = None  # For zones: lower boundary
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -82,6 +88,7 @@ class PriceLevel:
 @dataclass(frozen=True)
 class ProviderStatus:
     """Current status and capabilities of a market data provider."""
+
     provider: str = ""
     type: str = ""
     status: str = "unknown"

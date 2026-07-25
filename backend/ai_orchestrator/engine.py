@@ -83,7 +83,9 @@ class AIOrchestrator:
         self._metrics = AICostMetrics()
         self._health: dict[str, bool] = {p.value: True for p in AIProvider}
 
-    async def complete(self, request: AIRequest, provider: Optional[AIProvider] = None) -> AIResponse:
+    async def complete(
+        self, request: AIRequest, provider: Optional[AIProvider] = None
+    ) -> AIResponse:
         """Send a completion request with automatic fallback."""
         providers = [provider] if provider else PROVIDER_PRIORITY
         last_error = None
@@ -104,12 +106,17 @@ class AIOrchestrator:
             except Exception as e:
                 last_error = e
                 self._health[p.value] = False
-                logger.warning(f"Provider {p.value} failed: {e}. Trying next provider...")
+                logger.warning(
+                    f"Provider {p.value} failed: {e}. Trying next provider..."
+                )
                 continue
 
         return AIResponse(
-            content="", provider=providers[-1], model="",
-            success=False, error=str(last_error or "All providers failed"),
+            content="",
+            provider=providers[-1],
+            model="",
+            success=False,
+            error=str(last_error or "All providers failed"),
         )
 
     async def stream(self, request: AIRequest, provider: Optional[AIProvider] = None):
@@ -132,14 +139,18 @@ class AIOrchestrator:
             for p in AIProvider:
                 self._health[p.value] = True
 
-    async def _call_provider(self, provider: AIProvider, request: AIRequest) -> AIResponse:
+    async def _call_provider(
+        self, provider: AIProvider, request: AIRequest
+    ) -> AIResponse:
         """Call a specific AI provider (stub — replace with actual API calls)."""
         await asyncio.sleep(0.1)
         return AIResponse(
             content=f"Response from {provider.value}",
             provider=provider,
             model=request.model or f"{provider.value}-default",
-            tokens_in=100, tokens_out=50, cost=0.001,
+            tokens_in=100,
+            tokens_out=50,
+            cost=0.001,
         )
 
     async def _stream_provider(self, provider: AIProvider, request: AIRequest):
@@ -153,6 +164,10 @@ class AIOrchestrator:
             self._metrics.failed_requests += 1
         self._metrics.total_tokens += response.tokens_in + response.tokens_out
         self._metrics.total_cost += response.cost
-        self._metrics.provider_usage[provider.value] = self._metrics.provider_usage.get(provider.value, 0) + 1
+        self._metrics.provider_usage[provider.value] = (
+            self._metrics.provider_usage.get(provider.value, 0) + 1
+        )
         n = self._metrics.total_requests
-        self._metrics.average_latency_ms = (self._metrics.average_latency_ms * (n - 1) + response.latency_ms) / n
+        self._metrics.average_latency_ms = (
+            self._metrics.average_latency_ms * (n - 1) + response.latency_ms
+        ) / n

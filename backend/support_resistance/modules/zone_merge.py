@@ -29,14 +29,22 @@ class ZoneMerger:
             else:
                 merged.append(level)
 
-        supports = sorted([l for l in merged if l.level_type == "support"],
-                          key=lambda x: _strength_value(x.strength), reverse=True)
-        resistances = sorted([l for l in merged if l.level_type == "resistance"],
-                             key=lambda x: _strength_value(x.strength), reverse=True)
+        supports = sorted(
+            [l for l in merged if l.level_type == "support"],
+            key=lambda x: _strength_value(x.strength),
+            reverse=True,
+        )
+        resistances = sorted(
+            [l for l in merged if l.level_type == "resistance"],
+            key=lambda x: _strength_value(x.strength),
+            reverse=True,
+        )
         return supports[:max_levels] + resistances[:max_levels]
 
     @staticmethod
-    def nearest(levels: list[SRLevel], price: float) -> tuple[SRLevel | None, SRLevel | None]:
+    def nearest(
+        levels: list[SRLevel], price: float
+    ) -> tuple[SRLevel | None, SRLevel | None]:
         below = [l for l in levels if l.level_type == "support" and l.price < price]
         above = [l for l in levels if l.level_type == "resistance" and l.price > price]
         nearest_s = max(below, key=lambda x: x.price) if below else None
@@ -45,4 +53,6 @@ class ZoneMerger:
 
 
 def _strength_value(s: str) -> int:
-    return {"VERY_WEAK": 0, "WEAK": 1, "NORMAL": 2, "STRONG": 3, "VERY_STRONG": 4}.get(s, 0)
+    return {"VERY_WEAK": 0, "WEAK": 1, "NORMAL": 2, "STRONG": 3, "VERY_STRONG": 4}.get(
+        s, 0
+    )

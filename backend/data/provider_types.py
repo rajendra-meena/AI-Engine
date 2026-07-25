@@ -14,6 +14,7 @@ from typing import Any
 
 class ProviderType(str, Enum):
     """Supported data provider types."""
+
     YAHOO = "yahoo"
     BROKER = "broker"
     CSV = "csv"
@@ -24,6 +25,7 @@ class ProviderType(str, Enum):
 
 class ProviderStatus(str, Enum):
     """Health status of a data provider."""
+
     HEALTHY = "healthy"
     DEGRADED = "degraded"
     UNAVAILABLE = "unavailable"
@@ -33,6 +35,7 @@ class ProviderStatus(str, Enum):
 @dataclass
 class ProviderHealth:
     """Response from a provider health check."""
+
     status: ProviderStatus = ProviderStatus.HEALTHY
     provider_name: str = ""
     provider_type: ProviderType = ProviderType.YAHOO
@@ -45,6 +48,7 @@ class ProviderHealth:
 @dataclass
 class DailyOHLC:
     """Normalized daily OHLC record returned by any provider."""
+
     date: str  # YYYY-MM-DD
     open: float
     high: float
@@ -66,6 +70,7 @@ class DailyOHLC:
 @dataclass
 class IntradayCandle:
     """Normalized intraday candle returned by any provider."""
+
     time: str  # ISO-8601 datetime
     open: float
     high: float
@@ -87,6 +92,7 @@ class IntradayCandle:
 @dataclass
 class DailyReferenceLevels:
     """Daily reference levels (prev day, weekly) computed from provider data."""
+
     prev_day_high: float
     prev_day_low: float
     prev_day_close: float

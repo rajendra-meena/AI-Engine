@@ -10,6 +10,7 @@ from enum import Enum
 
 class Direction(str, Enum):
     """Trade / trend direction."""
+
     BULLISH = "BULLISH"
     BEARISH = "BEARISH"
     SIDEWAYS = "SIDEWAYS"
@@ -17,6 +18,7 @@ class Direction(str, Enum):
 
 class Bias(str, Enum):
     """Suggested trading bias."""
+
     BUY = "Buy"
     SELL = "Sell"
     WAIT = "Wait"
@@ -24,6 +26,7 @@ class Bias(str, Enum):
 
 class SignalState(str, Enum):
     """Lifecycle state of a trading signal."""
+
     DETECTED = "DETECTED"
     CONFIRMED = "CONFIRMED"
     TRIGGERED = "TRIGGERED"
@@ -35,6 +38,7 @@ class SignalState(str, Enum):
 
 class Outcome(str, Enum):
     """Backtest result outcome."""
+
     HIT_TARGET = "HIT_TARGET"
     HIT_STOPLOSS = "HIT_STOPLOSS"
     NO_TRADE = "NO_TRADE"
@@ -44,6 +48,7 @@ class Outcome(str, Enum):
 
 class MarketSession(str, Enum):
     """Current market session."""
+
     PRE_MARKET = "PreMarket"
     OPENING = "Opening"
     MID = "Mid"
@@ -53,6 +58,7 @@ class MarketSession(str, Enum):
 
 class TrendDirection(str, Enum):
     """Trend classification."""
+
     UPTREND = "UPTREND"
     DOWNTREND = "DOWNTREND"
     RANGING = "RANGING"
@@ -62,6 +68,7 @@ class TrendDirection(str, Enum):
 
 class TrendStrength(str, Enum):
     """Strength of a detected trend."""
+
     STRONG = "STRONG"
     MODERATE = "MODERATE"
     WEAK = "WEAK"
@@ -70,15 +77,17 @@ class TrendStrength(str, Enum):
 
 class ConfidenceGrade(str, Enum):
     """Confidence classification."""
-    VERY_HIGH = "VERY_HIGH"    # >= 85
-    HIGH = "HIGH"              # >= 70
-    MODERATE = "MODERATE"      # >= 50
-    LOW = "LOW"                # >= 30
-    VERY_LOW = "VERY_LOW"      # < 30
+
+    VERY_HIGH = "VERY_HIGH"  # >= 85
+    HIGH = "HIGH"  # >= 70
+    MODERATE = "MODERATE"  # >= 50
+    LOW = "LOW"  # >= 30
+    VERY_LOW = "VERY_LOW"  # < 30
 
 
 class IntervalType(str, Enum):
     """Type of chart interval."""
+
     INTRADAY = "INTRADAY"
     DAILY = "DAILY"
     WEEKLY = "WEEKLY"
@@ -87,6 +96,7 @@ class IntervalType(str, Enum):
 
 class Decision(str, Enum):
     """AI decision output."""
+
     BUY = "BUY"
     SELL = "SELL"
     WAIT = "WAIT"

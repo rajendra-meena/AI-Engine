@@ -42,8 +42,12 @@ class RSI(BaseIndicator):
                     self._avg_loss = sum(self._losses) / self.period
                     self._compute_rsi()
             else:
-                self._avg_gain = (self._avg_gain * (self.period - 1) + gain) / self.period
-                self._avg_loss = (self._avg_loss * (self.period - 1) + loss) / self.period
+                self._avg_gain = (
+                    self._avg_gain * (self.period - 1) + gain
+                ) / self.period
+                self._avg_loss = (
+                    self._avg_loss * (self.period - 1) + loss
+                ) / self.period
                 self._compute_rsi()
 
         self._prev_close = price

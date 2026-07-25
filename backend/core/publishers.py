@@ -30,32 +30,38 @@ async def publish_candle_closed(
     **extra,
 ) -> bool:
     """Publish a NEW_CANDLE event when a candle closes."""
-    return await bus.publish(Event(
-        type=NEW_CANDLE,
-        source="candle_builder",
-        priority=EventPriority.HIGH,
-        payload={
-            "symbol": symbol,
-            "interval": interval,
-            "open": open,
-            "high": high,
-            "low": low,
-            "close": close,
-            "volume": volume,
-            "time": time,
-            **extra,
-        },
-    ))
+    return await bus.publish(
+        Event(
+            type=NEW_CANDLE,
+            source="candle_builder",
+            priority=EventPriority.HIGH,
+            payload={
+                "symbol": symbol,
+                "interval": interval,
+                "open": open,
+                "high": high,
+                "low": low,
+                "close": close,
+                "volume": volume,
+                "time": time,
+                **extra,
+            },
+        )
+    )
 
 
-async def publish_price_update(bus: EventBus, symbol: str, price: float, volume: float = 0) -> bool:
+async def publish_price_update(
+    bus: EventBus, symbol: str, price: float, volume: float = 0
+) -> bool:
     """Publish a PRICE_UPDATE event (future use with live ticks)."""
-    return await bus.publish(Event(
-        type=PRICE_UPDATE,
-        source="tick_provider",
-        priority=EventPriority.NORMAL,
-        payload={"symbol": symbol, "price": price, "volume": volume},
-    ))
+    return await bus.publish(
+        Event(
+            type=PRICE_UPDATE,
+            source="tick_provider",
+            priority=EventPriority.NORMAL,
+            payload={"symbol": symbol, "price": price, "volume": volume},
+        )
+    )
 
 
 async def publish_breakout(
@@ -68,18 +74,20 @@ async def publish_breakout(
 ) -> bool:
     """Publish a BREAKOUT or BREAKDOWN event."""
     event_type = BREAKOUT if direction.upper() == "BULLISH" else BREAKDOWN
-    return await bus.publish(Event(
-        type=event_type,
-        source="pattern_engine",
-        priority=EventPriority.HIGH,
-        payload={
-            "symbol": symbol,
-            "direction": direction,
-            "level": level,
-            "reason": reason,
-            **extra,
-        },
-    ))
+    return await bus.publish(
+        Event(
+            type=event_type,
+            source="pattern_engine",
+            priority=EventPriority.HIGH,
+            payload={
+                "symbol": symbol,
+                "direction": direction,
+                "level": level,
+                "reason": reason,
+                **extra,
+            },
+        )
+    )
 
 
 async def publish_market_state(bus: EventBus, state: str) -> bool:
@@ -90,12 +98,14 @@ async def publish_market_state(bus: EventBus, state: str) -> bool:
         "session": NEW_SESSION,
     }
     event_type = event_map.get(state.lower(), NEW_SESSION)
-    return await bus.publish(Event(
-        type=event_type,
-        source="market_calendar",
-        priority=EventPriority.NORMAL,
-        payload={"state": state},
-    ))
+    return await bus.publish(
+        Event(
+            type=event_type,
+            source="market_calendar",
+            priority=EventPriority.NORMAL,
+            payload={"state": state},
+        )
+    )
 
 
 async def publish_indicator_event(
@@ -107,17 +117,19 @@ async def publish_indicator_event(
     **extra,
 ) -> bool:
     """Publish a generic indicator event (RSI_SIGNAL, MACD_SIGNAL, VWAP_CROSS, etc.)."""
-    return await bus.publish(Event(
-        type=event_type,
-        source="indicator_engine",
-        priority=EventPriority.NORMAL,
-        payload={
-            "symbol": symbol,
-            "indicator": indicator,
-            "value": value,
-            **extra,
-        },
-    ))
+    return await bus.publish(
+        Event(
+            type=event_type,
+            source="indicator_engine",
+            priority=EventPriority.NORMAL,
+            payload={
+                "symbol": symbol,
+                "indicator": indicator,
+                "value": value,
+                **extra,
+            },
+        )
+    )
 
 
 async def publish_signal_event(
@@ -130,15 +142,17 @@ async def publish_signal_event(
     **extra,
 ) -> bool:
     """Publish a signal lifecycle event (SIGNAL_CREATED, SIGNAL_UPDATED, etc.)."""
-    return await bus.publish(Event(
-        type=event_type,
-        source="signal_engine",
-        priority=EventPriority.HIGH,
-        payload={
-            "signal_id": signal_id,
-            "symbol": symbol,
-            "direction": direction,
-            "confidence": confidence,
-            **extra,
-        },
-    ))
+    return await bus.publish(
+        Event(
+            type=event_type,
+            source="signal_engine",
+            priority=EventPriority.HIGH,
+            payload={
+                "signal_id": signal_id,
+                "symbol": symbol,
+                "direction": direction,
+                "confidence": confidence,
+                **extra,
+            },
+        )
+    )

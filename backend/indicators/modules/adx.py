@@ -54,9 +54,24 @@ class ADX(BaseIndicator):
 
         if len(self._trs) >= self.period:
             atr = sum(self._trs) / min(len(self._trs), self.period)
-            plus_di = sum(self._plus_dms) / min(len(self._plus_dms), self.period) / atr * 100 if atr > 0 else 0
-            minus_di = sum(self._minus_dms) / min(len(self._minus_dms), self.period) / atr * 100 if atr > 0 else 0
-            dx = abs(plus_di - minus_di) / (plus_di + minus_di) * 100 if (plus_di + minus_di) > 0 else 0
+            plus_di = (
+                sum(self._plus_dms) / min(len(self._plus_dms), self.period) / atr * 100
+                if atr > 0
+                else 0
+            )
+            minus_di = (
+                sum(self._minus_dms)
+                / min(len(self._minus_dms), self.period)
+                / atr
+                * 100
+                if atr > 0
+                else 0
+            )
+            dx = (
+                abs(plus_di - minus_di) / (plus_di + minus_di) * 100
+                if (plus_di + minus_di) > 0
+                else 0
+            )
 
             self._dx_values.append(dx)
 

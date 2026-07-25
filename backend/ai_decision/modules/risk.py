@@ -14,12 +14,18 @@ class RiskEngine:
     """Evaluates risk context from volatility, SR distance, and MTF permission."""
 
     @staticmethod
-    def evaluate(context_snap: dict[str, Any] | None,
-                 mtf_snap: dict[str, Any] | None,
-                 sr_snap: dict[str, Any] | None) -> dict[str, Any]:
+    def evaluate(
+        context_snap: dict[str, Any] | None,
+        mtf_snap: dict[str, Any] | None,
+        sr_snap: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         if not context_snap:
-            return {"risk_level": "EXTREME", "max_risk_percent": 0.0,
-                    "risk_reward_context": "unknown", "reasoning": ["No context data"]}
+            return {
+                "risk_level": "EXTREME",
+                "max_risk_percent": 0.0,
+                "risk_reward_context": "unknown",
+                "reasoning": ["No context data"],
+            }
 
         risk_score = 0.0
         reasoning = []

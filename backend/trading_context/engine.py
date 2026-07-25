@@ -18,7 +18,12 @@ from indicators.events import INDICATORS_UPDATED
 from market_structure.events import STRUCTURE_UPDATED
 from patterns.events import PATTERN_DETECTED
 from trading_context.snapshot import TradingContextSnapshot
-from trading_context.events import TRADING_CONTEXT_UPDATED, BIAS_CHANGED, RISK_CHANGED, MODE_CHANGED
+from trading_context.events import (
+    TRADING_CONTEXT_UPDATED,
+    BIAS_CHANGED,
+    RISK_CHANGED,
+    MODE_CHANGED,
+)
 from trading_context.modules.trend_context import TrendContext
 from trading_context.modules.momentum_context import MomentumContext
 from trading_context.modules.volatility_context import VolatilityContext
@@ -46,17 +51,26 @@ class TradingContextUnit:
         self._last_mode: str = ""
 
     def update_indicator(self, payload: dict):
-        if payload.get("symbol") == self.symbol and payload.get("interval") == self.interval:
+        if (
+            payload.get("symbol") == self.symbol
+            and payload.get("interval") == self.interval
+        ):
             self._indicator = payload
             self._try_produce()
 
     def update_structure(self, payload: dict):
-        if payload.get("symbol") == self.symbol and payload.get("interval") == self.interval:
+        if (
+            payload.get("symbol") == self.symbol
+            and payload.get("interval") == self.interval
+        ):
             self._structure = payload
             self._try_produce()
 
     def update_patterns(self, payload: dict):
-        if payload.get("symbol") == self.symbol and payload.get("interval") == self.interval:
+        if (
+            payload.get("symbol") == self.symbol
+            and payload.get("interval") == self.interval
+        ):
             self._patterns = payload
             self._try_produce()
 
@@ -69,7 +83,9 @@ class TradingContextUnit:
         volatility = VolatilityContext.evaluate(self._indicator, self._patterns)
         liquidity = LiquidityContext.evaluate(self._structure)
         session = SessionContext.evaluate(self._structure.get("timestamp"))
-        strength = StrengthContext.evaluate(trend, momentum, self._structure, self._patterns)
+        strength = StrengthContext.evaluate(
+            trend, momentum, self._structure, self._patterns
+        )
 
         snap = TradingContextSnapshot(
             symbol=self.symbol,
@@ -84,7 +100,11 @@ class TradingContextUnit:
             liquidity_state=liquidity["state"],
             market_phase=self._structure.get("market_phase", "undefined"),
             session=session["session"],
-            pattern_bias=self._patterns.get("pattern_direction", "NEUTRAL").upper() if self._patterns else "NEUTRAL",
+            pattern_bias=(
+                self._patterns.get("pattern_direction", "NEUTRAL").upper()
+                if self._patterns
+                else "NEUTRAL"
+            ),
             structure_bias=self._structure.get("trend", "NEUTRAL"),
             indicator_bias=trend["bias"],
             overall_bias=strength["overall_bias"],
@@ -128,19 +148,28 @@ class TradingContextEngine:
     def __init__(self, event_bus: EventBus):
         self._event_bus = event_bus
         self._units: dict[tuple[str, str], TradingContextUnit] = {}
-        self._stats = {"total_updates": 0, "total_errors": 0,
-                       "start_time": datetime.now(timezone.utc).isoformat(),
-                       "bias_distribution": {"BULLISH": 0, "BEARISH": 0, "NEUTRAL": 0},
-                       "mode_distribution": {}}
+        self._stats = {
+            "total_updates": 0,
+            "total_errors": 0,
+            "start_time": datetime.now(timezone.utc).isoformat(),
+            "bias_distribution": {"BULLISH": 0, "BEARISH": 0, "NEUTRAL": 0},
+            "mode_distribution": {},
+        }
         self._running = False
 
     async def start(self):
         if self._running:
             return
         self._running = True
-        self._event_bus.subscribe(INDICATORS_UPDATED, self._on_indicator, name="trading_context_indicator")
-        self._event_bus.subscribe(STRUCTURE_UPDATED, self._on_structure, name="trading_context_structure")
-        self._event_bus.subscribe(PATTERN_DETECTED, self._on_patterns, name="trading_context_patterns")
+        self._event_bus.subscribe(
+            INDICATORS_UPDATED, self._on_indicator, name="trading_context_indicator"
+        )
+        self._event_bus.subscribe(
+            STRUCTURE_UPDATED, self._on_structure, name="trading_context_structure"
+        )
+        self._event_bus.subscribe(
+            PATTERN_DETECTED, self._on_patterns, name="trading_context_patterns"
+        )
         log_info("TradingContextEngine started")
 
     async def stop(self):
@@ -180,11 +209,19 @@ class TradingContextEngine:
             snap = unit.latest()
             if snap:
                 self._stats["total_updates"] += 1
-                self._stats["bias_distribution"][snap["overall_bias"]] = self._stats["bias_distribution"].get(snap["overall_bias"], 0) + 1
-                self._stats["mode_distribution"][snap["recommended_mode"]] = self._stats["mode_distribution"].get(snap["recommended_mode"], 0) + 1
+                self._stats["bias_distribution"][snap["overall_bias"]] = (
+                    self._stats["bias_distribution"].get(snap["overall_bias"], 0) + 1
+                )
+                self._stats["mode_distribution"][snap["recommended_mode"]] = (
+                    self._stats["mode_distribution"].get(snap["recommended_mode"], 0)
+                    + 1
+                )
 
-                ev = Event(type=TRADING_CONTEXT_UPDATED, source="trading_context_engine",
-                           payload={"symbol": symbol, "interval": interval, "snapshot": snap})
+                ev = Event(
+                    type=TRADING_CONTEXT_UPDATED,
+                    source="trading_context_engine",
+                    payload={"symbol": symbol, "interval": interval, "snapshot": snap},
+                )
                 await self._event_bus.publish(ev)
 
         except Exception as e:
@@ -195,7 +232,9 @@ class TradingContextEngine:
         unit = self._units.get((symbol, interval))
         return unit.latest() if unit else None
 
-    def history(self, symbol: str, interval: str, count: int = 100) -> list[dict[str, Any]]:
+    def history(
+        self, symbol: str, interval: str, count: int = 100
+    ) -> list[dict[str, Any]]:
         unit = self._units.get((symbol, interval))
         return unit.history(count) if unit else []
 

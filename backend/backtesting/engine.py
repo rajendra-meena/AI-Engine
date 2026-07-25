@@ -81,19 +81,34 @@ class BacktestEngine:
         self._trades: list[BacktestTrade] = []
         self._equity: list[float] = []
 
-    async def run(self, config: BacktestConfig, entry_rules: list[dict] | None = None, exit_rules: list[dict] | None = None) -> BacktestMetrics:
+    async def run(
+        self,
+        config: BacktestConfig,
+        entry_rules: list[dict] | None = None,
+        exit_rules: list[dict] | None = None,
+    ) -> BacktestMetrics:
         self._config = config
         self._trades = []
         self._equity = [config.initial_capital]
 
         # Simulated trade generation (replace with actual candle processing)
-        num_candles = self._estimate_candles(config.interval, config.start_date, config.end_date)
+        num_candles = self._estimate_candles(
+            config.interval, config.start_date, config.end_date
+        )
         position = 0.0
         entry_price = 0.0
 
         for i in range(num_candles):
-            is_entry = entry_rules and random.random() < 0.02 if entry_rules else random.random() < 0.01
-            is_exit = position != 0 and (exit_rules and random.random() < 0.05 if exit_rules else random.random() < 0.03)
+            is_entry = (
+                entry_rules and random.random() < 0.02
+                if entry_rules
+                else random.random() < 0.01
+            )
+            is_exit = position != 0 and (
+                exit_rules and random.random() < 0.05
+                if exit_rules
+                else random.random() < 0.03
+            )
 
             if is_entry and position == 0:
                 price = 19500 + random.gauss(0, 100)
@@ -105,11 +120,20 @@ class BacktestEngine:
                 pnl = (exit_price - entry_price) * position * config.leverage
                 pnl -= abs(pnl) * (config.commission_pct + config.slippage_pct) / 100
                 trade = BacktestTrade(
-                    entry_time=(datetime.fromisoformat(config.start_date) + timedelta(minutes=i * 15)).isoformat(),
-                    exit_time=(datetime.fromisoformat(config.start_date) + timedelta(minutes=i * 15 + 60)).isoformat(),
-                    symbol=config.symbol, direction="LONG",
-                    entry_price=entry_price, exit_price=exit_price,
-                    quantity=int(position), pnl=pnl,
+                    entry_time=(
+                        datetime.fromisoformat(config.start_date)
+                        + timedelta(minutes=i * 15)
+                    ).isoformat(),
+                    exit_time=(
+                        datetime.fromisoformat(config.start_date)
+                        + timedelta(minutes=i * 15 + 60)
+                    ).isoformat(),
+                    symbol=config.symbol,
+                    direction="LONG",
+                    entry_price=entry_price,
+                    exit_price=exit_price,
+                    quantity=int(position),
+                    pnl=pnl,
                     pnl_percent=pnl / config.initial_capital * 100,
                     duration=1.0,
                 )
@@ -154,32 +178,51 @@ class BacktestEngine:
                 if pct > max_dd_pct:
                     max_dd_pct = pct
 
-        returns = [t.pnl / self._config.initial_capital for t in trades] if self._config else []
+        returns = (
+            [t.pnl / self._config.initial_capital for t in trades]
+            if self._config
+            else []
+        )
         avg_r = sum(returns) / len(returns) if returns else 0
         var_r = sum((r - avg_r) ** 2 for r in returns) / len(returns) if returns else 0
         std = math.sqrt(var_r) if var_r > 0 else 1
         neg_r = [r for r in returns if r < 0]
-        dd_dev = math.sqrt(sum(r ** 2 for r in neg_r) / len(neg_r)) if neg_r else 1
+        dd_dev = math.sqrt(sum(r**2 for r in neg_r) / len(neg_r)) if neg_r else 1
         sqn = std * math.sqrt(total) if std > 0 else 0
 
         cw, cl, mcw, mcl = 0, 0, 0, 0
         for t in trades:
             if t.pnl > 0:
-                cw += 1; cl = 0; mcw = max(mcw, cw)
+                cw += 1
+                cl = 0
+                mcw = max(mcw, cw)
             else:
-                cl += 1; cw = 0; mcl = max(mcl, cl)
+                cl += 1
+                cw = 0
+                mcl = max(mcl, cl)
 
         return BacktestMetrics(
-            total_trades=total, wins=len(wins), losses=len(losses),
-            win_rate=wr, net_profit=net, gross_profit=gp, gross_loss=gl,
-            profit_factor=pf, expectancy=avg_w * wr / 100 - avg_l * (1 - wr / 100),
+            total_trades=total,
+            wins=len(wins),
+            losses=len(losses),
+            win_rate=wr,
+            net_profit=net,
+            gross_profit=gp,
+            gross_loss=gl,
+            profit_factor=pf,
+            expectancy=avg_w * wr / 100 - avg_l * (1 - wr / 100),
             sharpe=avg_r / std * math.sqrt(252) if std > 0 else 0,
             sortino=avg_r / dd_dev * math.sqrt(252) if dd_dev > 0 else 0,
             calmar=max_dd_pct > 0 and net / max_dd_pct * 252 / total or 0,
             recovery_factor=max_dd > 0 and net / max_dd or 0,
-            sqn=sqn, avg_trade=avg_t, avg_holding_time=avg_ht,
-            max_drawdown=max_dd, max_drawdown_pct=max_dd_pct,
-            consec_wins=mcw, consec_losses=mcl, exposure=total / total * 100 if total else 0,
+            sqn=sqn,
+            avg_trade=avg_t,
+            avg_holding_time=avg_ht,
+            max_drawdown=max_dd,
+            max_drawdown_pct=max_dd_pct,
+            consec_wins=mcw,
+            consec_losses=mcl,
+            exposure=total / total * 100 if total else 0,
             trades=trades,
         )
 
@@ -188,7 +231,16 @@ class BacktestEngine:
             s = datetime.fromisoformat(start)
             e = datetime.fromisoformat(end)
             days = (e - s).days
-            minutes = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30, "60m": 60, "4h": 240, "1d": 1440}
+            minutes = {
+                "1m": 1,
+                "3m": 3,
+                "5m": 5,
+                "15m": 15,
+                "30m": 30,
+                "60m": 60,
+                "4h": 240,
+                "1d": 1440,
+            }
             per_day = 1440 // minutes.get(interval, 15)
             return max(10, days * per_day)
         except Exception:
@@ -198,16 +250,26 @@ class BacktestEngine:
 class WalkForwardEngine:
     """Walk-forward optimization engine."""
 
-    def generate_windows(self, total_candles: int, train_size: int, test_size: int, wf_type: str = "rolling") -> list[dict[str, Any]]:
+    def generate_windows(
+        self,
+        total_candles: int,
+        train_size: int,
+        test_size: int,
+        wf_type: str = "rolling",
+    ) -> list[dict[str, Any]]:
         windows = []
         step = test_size if wf_type == "rolling" else test_size
 
         pos = 0
         while pos + train_size + test_size <= total_candles:
-            windows.append({
-                "train_start": pos, "train_end": pos + train_size,
-                "test_start": pos + train_size, "test_end": pos + train_size + test_size,
-            })
+            windows.append(
+                {
+                    "train_start": pos,
+                    "train_end": pos + train_size,
+                    "test_start": pos + train_size,
+                    "test_end": pos + train_size + test_size,
+                }
+            )
             if wf_type == "expanding":
                 pos += test_size
                 train_size += test_size
@@ -218,24 +280,42 @@ class WalkForwardEngine:
 
         return windows
 
-    async def run(self, config: BacktestConfig, wf_type: str, train_window: int, test_window: int, entry_rules: list[dict] | None = None, exit_rules: list[dict] | None = None) -> dict[str, Any]:
+    async def run(
+        self,
+        config: BacktestConfig,
+        wf_type: str,
+        train_window: int,
+        test_window: int,
+        entry_rules: list[dict] | None = None,
+        exit_rules: list[dict] | None = None,
+    ) -> dict[str, Any]:
         engine = BacktestEngine()
-        total = self._estimate_candles(config.interval, config.start_date, config.end_date)
+        total = self._estimate_candles(
+            config.interval, config.start_date, config.end_date
+        )
         windows = self.generate_windows(total, train_window, test_window, wf_type)
         oos_results: list[BacktestMetrics] = []
 
         for w in windows:
             wf_config = BacktestConfig(
-                symbol=config.symbol, interval=config.interval,
-                start_date=config.start_date, end_date=config.end_date,
+                symbol=config.symbol,
+                interval=config.interval,
+                start_date=config.start_date,
+                end_date=config.end_date,
                 initial_capital=config.initial_capital,
-                commission_pct=config.commission_pct, slippage_pct=config.slippage_pct,
+                commission_pct=config.commission_pct,
+                slippage_pct=config.slippage_pct,
             )
             result = await engine.run(wf_config, entry_rules, exit_rules)
             oos_results.append(result)
 
         combined = self._combine_results(oos_results)
-        return {"in_sample": combined, "out_of_sample": combined, "combined": combined, "windows": windows}
+        return {
+            "in_sample": combined,
+            "out_of_sample": combined,
+            "combined": combined,
+            "windows": windows,
+        }
 
     def _combine_results(self, results: list[BacktestMetrics]) -> BacktestMetrics:
         if not results:
@@ -248,9 +328,15 @@ class WalkForwardEngine:
             total.net_profit += r.net_profit
             total.gross_profit += r.gross_profit
             total.gross_loss += r.gross_loss
-        total.win_rate = total.total_trades > 0 and total.wins / total.total_trades * 100 or 0
-        total.profit_factor = total.gross_loss > 0 and total.gross_profit / total.gross_loss or 0
-        total.avg_trade = total.total_trades > 0 and total.net_profit / total.total_trades or 0
+        total.win_rate = (
+            total.total_trades > 0 and total.wins / total.total_trades * 100 or 0
+        )
+        total.profit_factor = (
+            total.gross_loss > 0 and total.gross_profit / total.gross_loss or 0
+        )
+        total.avg_trade = (
+            total.total_trades > 0 and total.net_profit / total.total_trades or 0
+        )
         return total
 
     def _estimate_candles(self, interval: str, start: str, end: str) -> int:

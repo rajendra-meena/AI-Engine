@@ -15,7 +15,12 @@ from core.event_bus import EventBus, Event
 from trading_context.events import TRADING_CONTEXT_UPDATED
 from multi_timeframe.config import HIERARCHY, EXECUTION_TF, BIAS_SCORE_MAP
 from multi_timeframe.snapshot import MTFSnapshot
-from multi_timeframe.events import MTF_UPDATED, ALIGNMENT_CHANGED, MARKET_CONDITION_CHANGED, TRADING_PERMISSION_CHANGED
+from multi_timeframe.events import (
+    MTF_UPDATED,
+    ALIGNMENT_CHANGED,
+    MARKET_CONDITION_CHANGED,
+    TRADING_PERMISSION_CHANGED,
+)
 from multi_timeframe.modules.alignment import AlignmentAnalyzer
 from multi_timeframe.modules.condition import ConditionAnalyzer
 from multi_timeframe.modules.permission import PermissionAnalyzer
@@ -29,7 +34,9 @@ class MTFUnit:
 
     def __init__(self, symbol: str):
         self.symbol = symbol
-        self._contexts: dict[str, dict[str, Any] | None] = {tf: None for tf in HIERARCHY}
+        self._contexts: dict[str, dict[str, Any] | None] = {
+            tf: None for tf in HIERARCHY
+        }
         self._history: deque[MTFSnapshot] = deque(maxlen=_HISTORY_LIMIT)
         self._last_level = ""
         self._last_condition = ""
@@ -49,7 +56,9 @@ class MTFUnit:
 
         alignment = AlignmentAnalyzer.evaluate(self._contexts)
         condition = ConditionAnalyzer.evaluate(alignment, self._contexts)
-        permission_data = PermissionAnalyzer.evaluate(alignment, condition, self._contexts)
+        permission_data = PermissionAnalyzer.evaluate(
+            alignment, condition, self._contexts
+        )
 
         # Institutional bias from the highest available timeframe
         top_available = min(available, key=lambda tf: HIERARCHY.index(tf))
@@ -57,7 +66,9 @@ class MTFUnit:
         htf_bias = htf_ctx.get("overall_bias", "NEUTRAL") if htf_ctx else "NEUTRAL"
 
         # Overall confidence: weighted average across populated TFs
-        confidences = [c.get("confidence", 0) or 0 for c in self._contexts.values() if c]
+        confidences = [
+            c.get("confidence", 0) or 0 for c in self._contexts.values() if c
+        ]
         avg_conf = int(sum(confidences) / len(confidences)) if confidences else 0
 
         # Per-timeframe summary for output
@@ -108,7 +119,8 @@ class MTFEngine:
         self._event_bus = event_bus
         self._units: dict[str, MTFUnit] = {}
         self._stats = {
-            "total_updates": 0, "total_errors": 0,
+            "total_updates": 0,
+            "total_errors": 0,
             "alignment_distribution": {},
             "condition_distribution": {},
             "permission_distribution": {},
@@ -120,7 +132,9 @@ class MTFEngine:
         if self._running:
             return
         self._running = True
-        self._event_bus.subscribe(TRADING_CONTEXT_UPDATED, self._on_context, name="mtf_engine")
+        self._event_bus.subscribe(
+            TRADING_CONTEXT_UPDATED, self._on_context, name="mtf_engine"
+        )
         log_info("MTFEngine started")
 
     async def stop(self):
@@ -144,12 +158,20 @@ class MTFEngine:
             if snap:
                 self._stats["total_updates"] += 1
                 d = snap.to_dict()
-                self._stats["alignment_distribution"][d["alignment_level"]] = \
-                    self._stats["alignment_distribution"].get(d["alignment_level"], 0) + 1
-                self._stats["condition_distribution"][d["market_condition"]] = \
-                    self._stats["condition_distribution"].get(d["market_condition"], 0) + 1
-                self._stats["permission_distribution"][d["trading_permission"]] = \
-                    self._stats["permission_distribution"].get(d["trading_permission"], 0) + 1
+                self._stats["alignment_distribution"][d["alignment_level"]] = (
+                    self._stats["alignment_distribution"].get(d["alignment_level"], 0)
+                    + 1
+                )
+                self._stats["condition_distribution"][d["market_condition"]] = (
+                    self._stats["condition_distribution"].get(d["market_condition"], 0)
+                    + 1
+                )
+                self._stats["permission_distribution"][d["trading_permission"]] = (
+                    self._stats["permission_distribution"].get(
+                        d["trading_permission"], 0
+                    )
+                    + 1
+                )
 
                 ev = Event(type=MTF_UPDATED, source="mtf_engine", payload=d)
                 await self._event_bus.publish(ev)

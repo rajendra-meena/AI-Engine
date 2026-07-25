@@ -46,8 +46,11 @@ class MACD(BaseIndicator):
                 symbol=candle.symbol,
                 interval=candle.interval,
                 time=candle.time,
-                open=macd_line, high=macd_line, low=macd_line,
-                close=macd_line, volume=0,
+                open=macd_line,
+                high=macd_line,
+                low=macd_line,
+                close=macd_line,
+                volume=0,
                 is_closed=True,
             )
             signal_val = self._ema_signal.update(signal_candle)
@@ -66,7 +69,10 @@ class MACD(BaseIndicator):
         return self._value
 
     def history(self, count: int = 100) -> list[dict]:
-        return [{"macd": v.macd, "signal": v.signal, "histogram": v.histogram} for v in self._history[-count:]]
+        return [
+            {"macd": v.macd, "signal": v.signal, "histogram": v.histogram}
+            for v in self._history[-count:]
+        ]
 
     def reset(self):
         self._ema_fast.reset()

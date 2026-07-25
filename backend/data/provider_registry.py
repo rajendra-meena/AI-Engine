@@ -18,6 +18,7 @@ from data.provider_types import ProviderType
 @dataclass
 class ProviderRegistration:
     """Metadata for a registered provider type."""
+
     name: str
     display_name: str
     provider_type: ProviderType

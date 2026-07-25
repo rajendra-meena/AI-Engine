@@ -22,6 +22,7 @@ router = APIRouter(tags=["predictions"])
 
 class PredictionCreate(BaseModel):
     """Pydantic model for prediction creation payload."""
+
     symbol: str
     interval: str = "15m"
     predicted_date: str

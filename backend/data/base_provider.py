@@ -27,6 +27,7 @@ from data.provider_types import (
 @dataclass
 class ProviderCapabilities:
     """Declares what a provider supports."""
+
     provider_name: str
     provider_type: ProviderType
     supports_daily: bool = True

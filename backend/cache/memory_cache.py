@@ -40,6 +40,7 @@ from utils.logger import log_info, log_warn
 @dataclass
 class CacheEntry:
     """A single cache entry with TTL tracking."""
+
     key: str
     value: Any
     created_at: float = field(default_factory=time.time)
@@ -61,6 +62,7 @@ class CacheEntry:
 @dataclass
 class CacheStats:
     """Aggregate cache performance statistics."""
+
     hits: int = 0
     misses: int = 0
     expired_hits: int = 0
@@ -144,7 +146,9 @@ class MemoryCache:
             self._store[key] = CacheEntry(
                 key=key,
                 value=value,
-                ttl_seconds=ttl_seconds if ttl_seconds is not None else MEMORY_CACHE_TTL_DEFAULT,
+                ttl_seconds=(
+                    ttl_seconds if ttl_seconds is not None else MEMORY_CACHE_TTL_DEFAULT
+                ),
             )
             self._stats.sets += 1
 
@@ -191,7 +195,11 @@ class MemoryCache:
                 del self._store[k]
 
             if to_delete:
-                log_info("MemoryCache: invalidated entries", pattern=pattern, count=len(to_delete))
+                log_info(
+                    "MemoryCache: invalidated entries",
+                    pattern=pattern,
+                    count=len(to_delete),
+                )
 
     async def clear(self):
         """Clear all cached entries."""
@@ -216,7 +224,11 @@ class MemoryCache:
             "active_entries": active,
             "expired_entries": expired,
             "max_items": self._max_items,
-            "usage_percent": round((active + expired) / self._max_items * 100, 1) if self._max_items else 0,
+            "usage_percent": (
+                round((active + expired) / self._max_items * 100, 1)
+                if self._max_items
+                else 0
+            ),
             "hits": self._stats.hits,
             "misses": self._stats.misses,
             "hit_ratio": self._stats.hit_ratio,

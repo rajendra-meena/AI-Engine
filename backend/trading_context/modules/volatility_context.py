@@ -7,8 +7,9 @@ class VolatilityContext:
     """Evaluates volatility state from indicators and breakouts."""
 
     @staticmethod
-    def evaluate(indicator_snap: dict[str, Any] | None,
-                 pattern_snap: dict[str, Any] | None) -> dict[str, Any]:
+    def evaluate(
+        indicator_snap: dict[str, Any] | None, pattern_snap: dict[str, Any] | None
+    ) -> dict[str, Any]:
         if not indicator_snap or not pattern_snap:
             return {"state": "NORMAL", "atr": None}
 

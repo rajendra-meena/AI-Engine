@@ -15,14 +15,22 @@ class StrengthContext:
       Momentum:    10%
     """
 
-    WEIGHTS = {"trend": 0.35, "structure": 0.25, "indicators": 0.20, "patterns": 0.10, "momentum": 0.10}
+    WEIGHTS = {
+        "trend": 0.35,
+        "structure": 0.25,
+        "indicators": 0.20,
+        "patterns": 0.10,
+        "momentum": 0.10,
+    }
     BIAS_MAP = {"BULLISH": 1.0, "NEUTRAL": 0.0, "BEARISH": -1.0}
 
     @staticmethod
-    def evaluate(trend: dict[str, Any],
-                 momentum: dict[str, Any],
-                 structure: dict[str, Any] | None,
-                 patterns: dict[str, Any] | None) -> dict[str, Any]:
+    def evaluate(
+        trend: dict[str, Any],
+        momentum: dict[str, Any],
+        structure: dict[str, Any] | None,
+        patterns: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         score = 0.0
         max_score = sum(StrengthContext.WEIGHTS.values())
         warnings = []

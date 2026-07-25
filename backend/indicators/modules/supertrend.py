@@ -19,7 +19,7 @@ from models.candle import Candle
 
 @dataclass
 class SuperTrendValue:
-    trend: str           # "UP" or "DOWN"
+    trend: str  # "UP" or "DOWN"
     atr: float
     upper_band: float
     lower_band: float
@@ -60,9 +60,17 @@ class SuperTrend(BaseIndicator):
 
             # Band adjustment
             if trend == "UP":
-                upper = min(upper, self._prev_upper) if self._prev_upper is not None else upper
+                upper = (
+                    min(upper, self._prev_upper)
+                    if self._prev_upper is not None
+                    else upper
+                )
             else:
-                lower = max(lower, self._prev_lower) if self._prev_lower is not None else lower
+                lower = (
+                    max(lower, self._prev_lower)
+                    if self._prev_lower is not None
+                    else lower
+                )
 
         self._prev_upper = upper
         self._prev_lower = lower
@@ -82,7 +90,12 @@ class SuperTrend(BaseIndicator):
 
     def history(self, count: int = 100) -> list[dict]:
         return [
-            {"trend": v.trend, "atr": v.atr, "upper_band": v.upper_band, "lower_band": v.lower_band}
+            {
+                "trend": v.trend,
+                "atr": v.atr,
+                "upper_band": v.upper_band,
+                "lower_band": v.lower_band,
+            }
             for v in self._history[-count:]
         ]
 

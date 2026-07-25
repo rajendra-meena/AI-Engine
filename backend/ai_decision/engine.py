@@ -60,10 +60,12 @@ class AIUnit:
         score_result = ScoreEngine.evaluate(self._context, self._mtf, self._sr)
         conf_result = ConfidenceEngine.evaluate(self._context, self._mtf, None)
         risk_result = RiskEngine.evaluate(self._context, self._mtf, self._sr)
-        plan = TradePlanner.evaluate(score_result, conf_result, risk_result,
-                                     self._context, self._mtf, self._sr)
-        final = Orchestrator.orchestrate(score_result, conf_result, risk_result, plan,
-                                         self._context, self._mtf)
+        plan = TradePlanner.evaluate(
+            score_result, conf_result, risk_result, self._context, self._mtf, self._sr
+        )
+        final = Orchestrator.orchestrate(
+            score_result, conf_result, risk_result, plan, self._context, self._mtf
+        )
 
         snap = DecisionSnapshot(
             symbol=self.symbol,
@@ -97,16 +99,21 @@ class AIDecisionEngine:
     def __init__(self, event_bus: EventBus):
         self._event_bus = event_bus
         self._units: dict[str, AIUnit] = {}
-        self._stats = {"total_decisions": 0, "total_errors": 0,
-                       "decision_distribution": {},
-                       "start_time": datetime.now(timezone.utc).isoformat()}
+        self._stats = {
+            "total_decisions": 0,
+            "total_errors": 0,
+            "decision_distribution": {},
+            "start_time": datetime.now(timezone.utc).isoformat(),
+        }
         self._running = False
 
     async def start(self):
         if self._running:
             return
         self._running = True
-        self._event_bus.subscribe(TRADING_CONTEXT_UPDATED, self._on_context, name="ai_decision_context")
+        self._event_bus.subscribe(
+            TRADING_CONTEXT_UPDATED, self._on_context, name="ai_decision_context"
+        )
         self._event_bus.subscribe(MTF_UPDATED, self._on_mtf, name="ai_decision_mtf")
         self._event_bus.subscribe(S_UPDATED, self._on_sr, name="ai_decision_sr")
         log_info("AIDecisionEngine started")

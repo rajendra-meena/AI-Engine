@@ -52,7 +52,6 @@ from tick.events import FORWARDED_TICK_EVENTS
 from core.symbols import is_valid_symbol
 from utils.logger import log_info, log_warn, log_error
 
-
 # Event types that get forwarded to WebSocket clients.
 # Maps internal event type → WS channel name.
 _FORWARDED_EVENTS: dict[str, str] = {
@@ -150,7 +149,9 @@ class WebSocketGateway:
         try:
             data = json.loads(raw)
         except json.JSONDecodeError:
-            await self._manager.send(client_id, make_error("PARSE_ERROR", "Invalid JSON"))
+            await self._manager.send(
+                client_id, make_error("PARSE_ERROR", "Invalid JSON")
+            )
             return
 
         msg_type = data.get("type", "")

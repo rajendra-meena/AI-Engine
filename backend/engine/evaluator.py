@@ -72,7 +72,11 @@ class ConditionEngine:
         if val is None:
             return False
 
-        target = condition.value if isinstance(condition.value, (int, float)) else float(condition.value)
+        target = (
+            condition.value
+            if isinstance(condition.value, (int, float))
+            else float(condition.value)
+        )
 
         try:
             if condition.operator == ComparisonOperator.GT:
@@ -107,12 +111,16 @@ class RuleEngine:
     def evaluate_rule(self, rule: Rule, data: dict[str, float]) -> EvaluationResult:
         """Evaluate a single rule (AND/OR/NOT across conditions)."""
         if not rule.conditions:
-            return EvaluationResult(triggered=False, rule_id=rule.id, rule_label=rule.label)
+            return EvaluationResult(
+                triggered=False, rule_id=rule.id, rule_label=rule.label
+            )
 
         results = []
         for cond in rule.conditions:
             result = self._condition_engine.evaluate(cond, data)
-            results.append({"condition_id": cond.id, "type": cond.type, "result": result})
+            results.append(
+                {"condition_id": cond.id, "type": cond.type, "result": result}
+            )
 
         if rule.operator == RuleOperator.AND:
             triggered = all(r["result"] for r in results)
@@ -123,7 +131,11 @@ class RuleEngine:
         else:
             triggered = False
 
-        score = sum(1 for r in results if r["result"]) / len(results) * 100 if results else 0
+        score = (
+            sum(1 for r in results if r["result"]) / len(results) * 100
+            if results
+            else 0
+        )
 
         return EvaluationResult(
             triggered=triggered,
@@ -133,7 +145,9 @@ class RuleEngine:
             score=score,
         )
 
-    def evaluate_rules(self, rules: list[Rule], data: dict[str, float]) -> list[EvaluationResult]:
+    def evaluate_rules(
+        self, rules: list[Rule], data: dict[str, float]
+    ) -> list[EvaluationResult]:
         """Evaluate all rules sorted by priority."""
         sorted_rules = sorted(rules, key=lambda r: r.priority)
         return [self.evaluate_rule(r, data) for r in sorted_rules]
@@ -169,16 +183,30 @@ class StrategyEvaluator:
         entry_signal = any(r.triggered for r in entry_results)
         exit_signal = any(r.triggered for r in exit_results)
 
-        entry_score = sum(r.score for r in entry_results) / len(entry_results) if entry_results else 0
-        exit_score = sum(r.score for r in exit_results) / len(exit_results) if exit_results else 0
+        entry_score = (
+            sum(r.score for r in entry_results) / len(entry_results)
+            if entry_results
+            else 0
+        )
+        exit_score = (
+            sum(r.score for r in exit_results) / len(exit_results)
+            if exit_results
+            else 0
+        )
 
         return {
             "entry_signal": entry_signal,
             "exit_signal": exit_signal,
             "entry_score": round(entry_score, 2),
             "exit_score": round(exit_score, 2),
-            "entry_rules": [{"label": r.rule_label, "triggered": r.triggered, "score": r.score} for r in entry_results],
-            "exit_rules": [{"label": r.rule_label, "triggered": r.triggered, "score": r.score} for r in exit_results],
+            "entry_rules": [
+                {"label": r.rule_label, "triggered": r.triggered, "score": r.score}
+                for r in entry_results
+            ],
+            "exit_rules": [
+                {"label": r.rule_label, "triggered": r.triggered, "score": r.score}
+                for r in exit_results
+            ],
             "timestamp": datetime.utcnow().isoformat(),
         }
 
@@ -203,7 +231,16 @@ class StrategyEvaluator:
             for j, cond in enumerate(conditions):
                 if not cond.get("type"):
                     errors.append(f"Rule {rid}, condition {j}: No type")
-                if cond.get("operator") not in (">", ">=", "<", "<=", "==", "!=", "cross_above", "cross_below"):
+                if cond.get("operator") not in (
+                    ">",
+                    ">=",
+                    "<",
+                    "<=",
+                    "==",
+                    "!=",
+                    "cross_above",
+                    "cross_below",
+                ):
                     errors.append(f"Rule {rid}, condition {j}: Invalid operator")
 
         return errors

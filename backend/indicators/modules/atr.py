@@ -31,7 +31,9 @@ class ATR(BaseIndicator):
         if self._prev_close is None:
             tr = high - low
         else:
-            tr = max(high - low, abs(high - self._prev_close), abs(low - self._prev_close))
+            tr = max(
+                high - low, abs(high - self._prev_close), abs(low - self._prev_close)
+            )
 
         self._prev_close = close
 

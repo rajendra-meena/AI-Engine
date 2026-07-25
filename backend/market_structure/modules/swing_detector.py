@@ -23,7 +23,12 @@ class SwingPoint:
     strength: str = "minor"  # "minor" or "major"
 
     def to_dict(self) -> dict[str, Any]:
-        return {"type": self.type, "price": self.price, "time": self.time, "strength": self.strength}
+        return {
+            "type": self.type,
+            "price": self.price,
+            "time": self.time,
+            "strength": self.strength,
+        }
 
 
 class SwingDetector:
@@ -52,22 +57,34 @@ class SwingDetector:
         mid_idx = len(self._candles) - self.lookback - 1
         mid = self._candles[mid_idx]
 
-        left = list(self._candles)[mid_idx - self.lookback:mid_idx]
-        right = list(self._candles)[mid_idx + 1:mid_idx + self.lookback + 1]
+        left = list(self._candles)[mid_idx - self.lookback : mid_idx]
+        right = list(self._candles)[mid_idx + 1 : mid_idx + self.lookback + 1]
 
         # Swing high
-        if all(mid.high > c.high for c in left) and all(mid.high >= c.high for c in right):
+        if all(mid.high > c.high for c in left) and all(
+            mid.high >= c.high for c in right
+        ):
             strength = self._classify_swing_strength(mid.high, mid_idx, "high")
-            sp = SwingPoint(type="high", price=mid.high, index=self._count - self.lookback - 1,
-                            time=mid.time, strength=strength)
+            sp = SwingPoint(
+                type="high",
+                price=mid.high,
+                index=self._count - self.lookback - 1,
+                time=mid.time,
+                strength=strength,
+            )
             self._swings.append(sp)
             new_swings.append(sp)
 
         # Swing low
         if all(mid.low < c.low for c in left) and all(mid.low <= c.low for c in right):
             strength = self._classify_swing_strength(mid.low, mid_idx, "low")
-            sp = SwingPoint(type="low", price=mid.low, index=self._count - self.lookback - 1,
-                            time=mid.time, strength=strength)
+            sp = SwingPoint(
+                type="low",
+                price=mid.low,
+                index=self._count - self.lookback - 1,
+                time=mid.time,
+                strength=strength,
+            )
             self._swings.append(sp)
             new_swings.append(sp)
 

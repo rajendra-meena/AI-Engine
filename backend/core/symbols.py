@@ -12,9 +12,10 @@ from typing import NamedTuple
 
 class SymbolInfo(NamedTuple):
     """Metadata for a single trading symbol."""
-    display_name: str         # User-facing name (e.g. "NIFTY 50")
-    yahoo_ticker: str         # yfinance symbol
-    exchange: str             # Primary exchange
+
+    display_name: str  # User-facing name (e.g. "NIFTY 50")
+    yahoo_ticker: str  # yfinance symbol
+    exchange: str  # Primary exchange
     # Future fields (placeholders for broker integration):
     # zerodha_symbol: str
     # angel_symbol: str

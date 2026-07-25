@@ -1,6 +1,13 @@
 """Zerodha Kite Connect broker adapter."""
 
-from ..base import BaseBroker, BrokerOrder, BrokerPosition, BrokerHolding, BrokerFunds, BrokerOrderStatus
+from ..base import (
+    BaseBroker,
+    BrokerOrder,
+    BrokerPosition,
+    BrokerHolding,
+    BrokerFunds,
+    BrokerOrderStatus,
+)
 
 
 class ZerodhaBroker(BaseBroker):

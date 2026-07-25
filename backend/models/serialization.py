@@ -35,6 +35,7 @@ def from_dict(cls: type[T], data: dict[str, Any]) -> T:
     Fields not present in the dict use their defaults.
     """
     import dataclasses
+
     if not dataclasses.is_dataclass(cls):
         raise ValueError(f"{cls.__name__} is not a dataclass")
     field_names = {f.name for f in dataclasses.fields(cls)}

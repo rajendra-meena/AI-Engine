@@ -15,30 +15,47 @@ class SupplyDemandDetector:
         self._zones: list[SupplyDemandZone] = []
         self._age = 0
 
-    def update(self, swings_high: list[float], swings_low: list[float],
-               candle_close: float) -> list[SupplyDemandZone]:
+    def update(
+        self, swings_high: list[float], swings_low: list[float], candle_close: float
+    ) -> list[SupplyDemandZone]:
         self._age += 1
         new_zones: list[SupplyDemandZone] = []
 
         # Supply zones: clustered swing highs
         clusters = self._cluster(swings_high, candle_close * 1.001)
         for low, high in clusters:
-            existing = [z for z in self._zones if z.zone_type == "supply"
-                        and abs(z.top - high) / max(high, 1) < self.tolerance]
+            existing = [
+                z
+                for z in self._zones
+                if z.zone_type == "supply"
+                and abs(z.top - high) / max(high, 1) < self.tolerance
+            ]
             if not existing:
-                zone = SupplyDemandZone(zone_type="supply", top=round(high, 2),
-                                        bottom=round(low, 2), creation_time=str(self._age))
+                zone = SupplyDemandZone(
+                    zone_type="supply",
+                    top=round(high, 2),
+                    bottom=round(low, 2),
+                    creation_time=str(self._age),
+                )
                 self._zones.append(zone)
                 new_zones.append(zone)
 
         # Demand zones: clustered swing lows
         clusters = self._cluster(swings_low, candle_close * 0.999, reverse=True)
         for low, high in clusters:
-            existing = [z for z in self._zones if z.zone_type == "demand"
-                        and abs(z.bottom - low) / max(low, 1) < self.tolerance]
+            existing = [
+                z
+                for z in self._zones
+                if z.zone_type == "demand"
+                and abs(z.bottom - low) / max(low, 1) < self.tolerance
+            ]
             if not existing:
-                zone = SupplyDemandZone(zone_type="demand", top=round(high, 2),
-                                        bottom=round(low, 2), creation_time=str(self._age))
+                zone = SupplyDemandZone(
+                    zone_type="demand",
+                    top=round(high, 2),
+                    bottom=round(low, 2),
+                    creation_time=str(self._age),
+                )
                 self._zones.append(zone)
                 new_zones.append(zone)
 
@@ -79,7 +96,9 @@ class SupplyDemandDetector:
         self._age = 0
 
     @staticmethod
-    def _cluster(prices: list[float], reference: float, reverse: bool = False) -> list[tuple[float, float]]:
+    def _cluster(
+        prices: list[float], reference: float, reverse: bool = False
+    ) -> list[tuple[float, float]]:
         """Cluster nearby swing points into zones. Returns [(low, high)]."""
         if len(prices) < 2:
             return []

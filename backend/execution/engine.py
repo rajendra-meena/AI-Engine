@@ -58,8 +58,12 @@ class ExecutionOrder:
     product: str = "MIS"
     validity: str = "DAY"
     tag: Optional[str] = None
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+    updated_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
     meta: dict[str, Any] = field(default_factory=dict)
 
 
@@ -128,8 +132,10 @@ class ExecutionEngine:
 
                 elapsed = (datetime.now(timezone.utc) - start).total_seconds() * 1000
                 result = ExecutionResult(
-                    success=True, order=order,
-                    latency_ms=elapsed, attempts=attempts,
+                    success=True,
+                    order=order,
+                    latency_ms=elapsed,
+                    attempts=attempts,
                 )
                 self._log(result)
                 return result
@@ -138,21 +144,32 @@ class ExecutionEngine:
                 if attempts >= self.max_retries:
                     order.status = OrderStatus.REJECTED
                     order.rejection_reason = str(e)
-                    result = ExecutionResult(success=False, order=order, error=str(e), attempts=attempts)
+                    result = ExecutionResult(
+                        success=False, order=order, error=str(e), attempts=attempts
+                    )
                     self._log(result)
                     return result
-                await asyncio.sleep(0.5 * (2 ** attempts))
+                await asyncio.sleep(0.5 * (2**attempts))
 
         order.status = OrderStatus.REJECTED
-        result = ExecutionResult(success=False, order=order, error="Max retries exceeded", attempts=attempts)
+        result = ExecutionResult(
+            success=False, order=order, error="Max retries exceeded", attempts=attempts
+        )
         self._log(result)
         return result
 
-    async def execute_basket(self, orders: list[ExecutionOrder]) -> list[ExecutionResult]:
+    async def execute_basket(
+        self, orders: list[ExecutionOrder]
+    ) -> list[ExecutionResult]:
         """Execute multiple orders as a basket."""
         return [await self.execute(o) for o in orders]
 
-    async def execute_multi_leg(self, main: ExecutionOrder, stop_loss: ExecutionOrder, take_profit: Optional[ExecutionOrder] = None) -> list[ExecutionResult]:
+    async def execute_multi_leg(
+        self,
+        main: ExecutionOrder,
+        stop_loss: ExecutionOrder,
+        take_profit: Optional[ExecutionOrder] = None,
+    ) -> list[ExecutionResult]:
         """Execute a bracket-style multi-leg order."""
         results = [await self.execute(main)]
         if stop_loss:
@@ -177,9 +194,13 @@ class ExecutionEngine:
         """Validate order parameters."""
         if order.quantity <= 0:
             return "Invalid quantity"
-        if order.type in (OrderType.LIMIT, OrderType.STOP_LIMIT) and (order.price is None or order.price <= 0):
+        if order.type in (OrderType.LIMIT, OrderType.STOP_LIMIT) and (
+            order.price is None or order.price <= 0
+        ):
             return "Invalid price for limit order"
-        if order.type in (OrderType.STOP, OrderType.STOP_LIMIT) and (order.trigger_price is None or order.trigger_price <= 0):
+        if order.type in (OrderType.STOP, OrderType.STOP_LIMIT) and (
+            order.trigger_price is None or order.trigger_price <= 0
+        ):
             return "Invalid trigger price for stop order"
         if not order.symbol:
             return "Symbol required"

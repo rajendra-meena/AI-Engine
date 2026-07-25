@@ -130,12 +130,22 @@ class YahooProvider(BaseProvider):
 
     # ── Daily data ──
 
-    async def fetch_daily(self, symbol: str, start_date: date, end_date: date) -> list[DailyOHLC]:
+    async def fetch_daily(
+        self, symbol: str, start_date: date, end_date: date
+    ) -> list[DailyOHLC]:
         ticker = await self.get_provider_symbol(symbol)
-        log_info("YahooProvider.fetch_daily", symbol=symbol, ticker=ticker, start=str(start_date), end=str(end_date))
+        log_info(
+            "YahooProvider.fetch_daily",
+            symbol=symbol,
+            ticker=ticker,
+            start=str(start_date),
+            end=str(end_date),
+        )
 
         df = await asyncio.to_thread(
-            yf.Ticker(ticker).history, start=start_date, end=end_date + timedelta(days=1)
+            yf.Ticker(ticker).history,
+            start=start_date,
+            end=end_date + timedelta(days=1),
         )
 
         if df.empty:
@@ -145,51 +155,69 @@ class YahooProvider(BaseProvider):
         records = []
         for _, row in df.iterrows():
             date_val = row["Date"]
-            records.append(DailyOHLC(
-                date=parse_date_str(date_val),
-                open=float(row["Open"]),
-                high=float(row["High"]),
-                low=float(row["Low"]),
-                close=float(row["Close"]),
-                volume=float(row.get("Volume", 0)),
-            ))
+            records.append(
+                DailyOHLC(
+                    date=parse_date_str(date_val),
+                    open=float(row["Open"]),
+                    high=float(row["High"]),
+                    low=float(row["Low"]),
+                    close=float(row["Close"]),
+                    volume=float(row.get("Volume", 0)),
+                )
+            )
 
         self._last_success = datetime.now(timezone.utc)
         return records
 
     # ── Intraday data ──
 
-    async def fetch_intraday(self, symbol: str, interval: str, days: int) -> list[IntradayCandle]:
+    async def fetch_intraday(
+        self, symbol: str, interval: str, days: int
+    ) -> list[IntradayCandle]:
         if not await self.validate_symbol(symbol):
             raise InvalidSymbol(symbol, self._name)
         if not is_valid_interval(interval):
             raise InvalidInterval(interval, self._name)
 
         ticker = await self.get_provider_symbol(symbol)
-        max_days = INTRADAY_MAX_DAYS_FAST if interval in FAST_INTERVALS else INTRADAY_MAX_DAYS_DEFAULT
+        max_days = (
+            INTRADAY_MAX_DAYS_FAST
+            if interval in FAST_INTERVALS
+            else INTRADAY_MAX_DAYS_DEFAULT
+        )
         period = f"{min(days, max_days)}d"
 
-        log_info("YahooProvider.fetch_intraday", symbol=symbol, ticker=ticker, interval=interval, period=period)
+        log_info(
+            "YahooProvider.fetch_intraday",
+            symbol=symbol,
+            ticker=ticker,
+            interval=interval,
+            period=period,
+        )
 
         df = await asyncio.to_thread(
             yf.Ticker(ticker).history, period=period, interval=interval
         )
 
         if df.empty:
-            raise DataUnavailable(symbol, f"yfinance returned no intraday data for {interval}")
+            raise DataUnavailable(
+                symbol, f"yfinance returned no intraday data for {interval}"
+            )
 
         df = df.reset_index()
         candles = []
         for _, row in df.iterrows():
             dt = row["Datetime"]
-            candles.append(IntradayCandle(
-                time=dt.isoformat() if hasattr(dt, "isoformat") else str(dt),
-                open=float(row["Open"]),
-                high=float(row["High"]),
-                low=float(row["Low"]),
-                close=float(row["Close"]),
-                volume=float(row.get("Volume", 0)),
-            ))
+            candles.append(
+                IntradayCandle(
+                    time=dt.isoformat() if hasattr(dt, "isoformat") else str(dt),
+                    open=float(row["Open"]),
+                    high=float(row["High"]),
+                    low=float(row["Low"]),
+                    close=float(row["Close"]),
+                    volume=float(row.get("Volume", 0)),
+                )
+            )
 
         self._last_success = datetime.now(timezone.utc)
         return candles
@@ -220,15 +248,17 @@ class YahooProvider(BaseProvider):
         rows = []
         for _, row in df.iterrows():
             dt = row["Datetime"] if "Datetime" in df.columns else row.get("Date")
-            rows.append({
-                "Datetime": dt,
-                "Date": dt,
-                "Open": float(row["Open"]),
-                "High": float(row["High"]),
-                "Low": float(row["Low"]),
-                "Close": float(row["Close"]),
-                "Volume": float(row.get("Volume", 0)),
-            })
+            rows.append(
+                {
+                    "Datetime": dt,
+                    "Date": dt,
+                    "Open": float(row["Open"]),
+                    "High": float(row["High"]),
+                    "Low": float(row["Low"]),
+                    "Close": float(row["Close"]),
+                    "Volume": float(row.get("Volume", 0)),
+                }
+            )
         return rows
 
     async def fetch_daily_range(
@@ -252,23 +282,29 @@ class YahooProvider(BaseProvider):
         rows = []
         for _, row in df.iterrows():
             date_val = row["Date"] if "Date" in df.columns else row.get("Datetime")
-            rows.append({
-                "Date": date_val,
-                "Open": float(row["Open"]),
-                "High": float(row["High"]),
-                "Low": float(row["Low"]),
-                "Close": float(row["Close"]),
-                "Volume": float(row.get("Volume", 0)),
-            })
+            rows.append(
+                {
+                    "Date": date_val,
+                    "Open": float(row["Open"]),
+                    "High": float(row["High"]),
+                    "Low": float(row["Low"]),
+                    "Close": float(row["Close"]),
+                    "Volume": float(row.get("Volume", 0)),
+                }
+            )
         return rows
 
     # ── Daily reference levels ──
 
-    async def fetch_daily_reference_levels(self, symbol: str) -> DailyReferenceLevels | None:
+    async def fetch_daily_reference_levels(
+        self, symbol: str
+    ) -> DailyReferenceLevels | None:
         ticker = await self.get_provider_symbol(symbol)
         try:
             df = await asyncio.to_thread(
-                yf.Ticker(ticker).history, period=f"{DAILY_REFS_LOOKBACK_DAYS}d", interval=BACKTEST_DAILY_INTERVAL
+                yf.Ticker(ticker).history,
+                period=f"{DAILY_REFS_LOOKBACK_DAYS}d",
+                interval=BACKTEST_DAILY_INTERVAL,
             )
             if df.empty:
                 return None
@@ -277,14 +313,16 @@ class YahooProvider(BaseProvider):
             dailies = []
             for _, row in df.iterrows():
                 date_val = row["Date"] if "Date" in df.columns else row.get("Datetime")
-                dailies.append(DailyOHLC(
-                    date=parse_date_str(date_val),
-                    open=float(row["Open"]),
-                    high=float(row["High"]),
-                    low=float(row["Low"]),
-                    close=float(row["Close"]),
-                    volume=float(row.get("Volume", 0)),
-                ))
+                dailies.append(
+                    DailyOHLC(
+                        date=parse_date_str(date_val),
+                        open=float(row["Open"]),
+                        high=float(row["High"]),
+                        low=float(row["Low"]),
+                        close=float(row["Close"]),
+                        volume=float(row.get("Volume", 0)),
+                    )
+                )
 
             if len(dailies) >= DAILY_REFS_MIN_CANDLES:
                 prev = dailies[-2]

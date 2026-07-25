@@ -27,8 +27,15 @@ class PsychologicalLevels:
                 continue
             type_str = "resistance" if price > candle_close else "support"
             is_major = i == 0
-            levels.append(SRLevel(price=float(price), level_type=type_str,
-                                  source="psychological", strength="NORMAL" if is_major else "WEAK",
-                                  label=f"Round {price}", is_major=is_major))
+            levels.append(
+                SRLevel(
+                    price=float(price),
+                    level_type=type_str,
+                    source="psychological",
+                    strength="NORMAL" if is_major else "WEAK",
+                    label=f"Round {price}",
+                    is_major=is_major,
+                )
+            )
 
         return levels

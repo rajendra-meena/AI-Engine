@@ -13,17 +13,16 @@ from datetime import datetime, timezone, timedelta
 
 from core.settings import UTC_OFFSET_HOURS
 
-
 # ── Market hours (IST) ──
 
 MARKET_OPEN_HOUR = 9
-MARKET_OPEN_MINUTE = 15     # 9:15 AM IST
+MARKET_OPEN_MINUTE = 15  # 9:15 AM IST
 MARKET_CLOSE_HOUR = 15
-MARKET_CLOSE_MINUTE = 30    # 3:30 PM IST
+MARKET_CLOSE_MINUTE = 30  # 3:30 PM IST
 
 # Session phase boundaries (minutes from open)
-OPENING_PHASE_END = 30      # First 30 minutes = Opening
-CLOSING_PHASE_START = 345   # Last 30 minutes = Closing (375 - 30 = 345)
+OPENING_PHASE_END = 30  # First 30 minutes = Opening
+CLOSING_PHASE_START = 345  # Last 30 minutes = Closing (375 - 30 = 345)
 SESSION_TOTAL_MINUTES = 375  # 9:15 → 15:30 = 6h15m = 375 minutes
 
 
@@ -64,7 +63,9 @@ def minutes_from_market_open(dt: datetime | None = None) -> int:
     Returns negative if market hasn't opened yet.
     """
     now = dt if dt else _now_ist()
-    today_open = now.replace(hour=MARKET_OPEN_HOUR, minute=MARKET_OPEN_MINUTE, second=0, microsecond=0)
+    today_open = now.replace(
+        hour=MARKET_OPEN_HOUR, minute=MARKET_OPEN_MINUTE, second=0, microsecond=0
+    )
     diff = (now - today_open).total_seconds()
     return int(diff // 60)
 

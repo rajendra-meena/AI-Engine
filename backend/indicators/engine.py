@@ -71,17 +71,21 @@ class IndicatorComputeUnit:
         adx = self.adx_14.update(candle)
         st = self.supertrend.update(candle)
 
-        all_ready = (
-            ema_9 is not None and rsi is not None and atr is not None
-        )
+        all_ready = ema_9 is not None and rsi is not None and atr is not None
 
         snapshot = IndicatorSnapshot(
             symbol=self.symbol,
             interval=self.interval,
             timestamp=candle.time or datetime.now(timezone.utc).isoformat(),
-            ema_9=ema_9, ema_20=ema_20, ema_50=ema_50, ema_200=ema_200,
-            sma_20=sma_20, sma_50=sma_50,
-            rsi_14=rsi, atr_14=atr, vwap=vwap,
+            ema_9=ema_9,
+            ema_20=ema_20,
+            ema_50=ema_50,
+            ema_200=ema_200,
+            sma_20=sma_20,
+            sma_50=sma_50,
+            rsi_14=rsi,
+            atr_14=atr,
+            vwap=vwap,
             macd=macd_val.macd if macd_val else None,
             macd_signal=macd_val.signal if macd_val else None,
             macd_histogram=macd_val.histogram if macd_val else None,
@@ -104,10 +108,18 @@ class IndicatorComputeUnit:
         return self.snapshots[-1] if self.snapshots else None
 
     def reset(self):
-        self.ema_9.reset(); self.ema_20.reset(); self.ema_50.reset()
-        self.ema_200.reset(); self.sma_20.reset(); self.sma_50.reset()
-        self.rsi_14.reset(); self.atr_14.reset(); self.vwap.reset()
-        self.macd.reset(); self.adx_14.reset(); self.supertrend.reset()
+        self.ema_9.reset()
+        self.ema_20.reset()
+        self.ema_50.reset()
+        self.ema_200.reset()
+        self.sma_20.reset()
+        self.sma_50.reset()
+        self.rsi_14.reset()
+        self.atr_14.reset()
+        self.vwap.reset()
+        self.macd.reset()
+        self.adx_14.reset()
+        self.supertrend.reset()
         self.candles_processed = 0
         self.snapshots.clear()
 
@@ -135,12 +147,16 @@ class IndicatorEngine:
         if self._running:
             return
         self._running = True
-        self._event_bus.subscribe(CANDLE_CLOSED, self._on_candle_closed, name="indicator_engine")
+        self._event_bus.subscribe(
+            CANDLE_CLOSED, self._on_candle_closed, name="indicator_engine"
+        )
         log_info("IndicatorEngine started")
 
     async def stop(self):
         self._running = False
-        log_info("IndicatorEngine stopped", processed=self._stats["total_candles_processed"])
+        log_info(
+            "IndicatorEngine stopped", processed=self._stats["total_candles_processed"]
+        )
 
     async def _on_candle_closed(self, event: Event):
         if not self._running:
@@ -191,7 +207,12 @@ class IndicatorEngine:
         s = dict(self._stats)
         s["running"] = self._running
         s["units"] = [
-            {"symbol": k[0], "interval": k[1], "candles_processed": v.candles_processed, "snapshots": len(v.snapshots)}
+            {
+                "symbol": k[0],
+                "interval": k[1],
+                "candles_processed": v.candles_processed,
+                "snapshots": len(v.snapshots),
+            }
             for k, v in self._units.items()
         ]
         return s

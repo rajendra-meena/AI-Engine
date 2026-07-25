@@ -15,11 +15,12 @@ class VolumeData:
     """
     Volume analysis for a single candle or time period.
     """
+
     current_volume: float = 0.0
     average_volume: float = 0.0
-    volume_ratio: float = 0.0             # current / average
-    is_spike: bool = False                 # current > 1.5× average
-    is_low: bool = False                   # current < 0.5× average
+    volume_ratio: float = 0.0  # current / average
+    is_spike: bool = False  # current > 1.5× average
+    is_low: bool = False  # current < 0.5× average
     previous_volume: float = 0.0
     change_percent: float = 0.0
 

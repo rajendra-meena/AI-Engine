@@ -48,14 +48,16 @@ def load_daily_csv(ticker: str):
         with open(path, "r", newline="") as f:
             reader = csv.DictReader(f)
             for row in reader:
-                records.append({
-                    "Date": row["Date"],
-                    "Open": float(row["Open"]),
-                    "High": float(row["High"]),
-                    "Low": float(row["Low"]),
-                    "Close": float(row["Close"]),
-                    "Volume": float(row.get("Volume", 0)),
-                })
+                records.append(
+                    {
+                        "Date": row["Date"],
+                        "Open": float(row["Open"]),
+                        "High": float(row["High"]),
+                        "Low": float(row["Low"]),
+                        "Close": float(row["Close"]),
+                        "Volume": float(row.get("Volume", 0)),
+                    }
+                )
                 last_date = row["Date"]
     except Exception:
         return [], None, 0
@@ -69,7 +71,9 @@ def write_full_daily_csv(ticker: str, records: list):
         writer = csv.writer(f)
         writer.writerow(["Date", "Open", "High", "Low", "Close", "Volume"])
         for r in records:
-            writer.writerow([r["Date"], r["Open"], r["High"], r["Low"], r["Close"], r["Volume"]])
+            writer.writerow(
+                [r["Date"], r["Open"], r["High"], r["Low"], r["Close"], r["Volume"]]
+            )
 
 
 def append_daily_csv(ticker: str, records: list):
@@ -81,7 +85,9 @@ def append_daily_csv(ticker: str, records: list):
         if not file_exists:
             writer.writerow(["Date", "Open", "High", "Low", "Close", "Volume"])
         for r in records:
-            writer.writerow([r["Date"], r["Open"], r["High"], r["Low"], r["Close"], r["Volume"]])
+            writer.writerow(
+                [r["Date"], r["Open"], r["High"], r["Low"], r["Close"], r["Volume"]]
+            )
 
 
 def load_intraday_csv(ticker: str, interval: str):
@@ -126,4 +132,6 @@ def write_full_intraday_csv(ticker: str, interval: str, candles: list):
         writer = csv.writer(f)
         writer.writerow(["time", "open", "high", "low", "close", "volume"])
         for c in candles:
-            writer.writerow([c["time"], c["open"], c["high"], c["low"], c["close"], c["volume"]])
+            writer.writerow(
+                [c["time"], c["open"], c["high"], c["low"], c["close"], c["volume"]]
+            )

@@ -55,6 +55,7 @@ from utils.logger import log_info, log_warn, log_error
 @dataclass
 class SymbolStatus:
     """Tracks the latest state of data for a single symbol."""
+
     symbol: str
     last_intraday_update: datetime | None = None
     last_daily_update: datetime | None = None
@@ -68,6 +69,7 @@ class SymbolStatus:
 @dataclass
 class EngineMetrics:
     """Aggregate engine performance metrics."""
+
     total_refreshes: int = 0
     total_errors: int = 0
     total_events_published: int = 0
@@ -143,19 +145,27 @@ class LiveMarketDataEngine:
         except Exception as e:
             log_warn("LiveMarketDataEngine started (provider degraded)", error=str(e))
 
-        await self._publish_event(ENGINE_STARTED, {
-            "start_time": self._metrics.start_time.isoformat(),
-            "symbols": list(self._symbols.keys()),
-        })
+        await self._publish_event(
+            ENGINE_STARTED,
+            {
+                "start_time": self._metrics.start_time.isoformat(),
+                "symbols": list(self._symbols.keys()),
+            },
+        )
 
     async def stop(self):
         """Stop the engine and publish ENGINE_STOPPED."""
         self._running = False
-        await self._publish_event(ENGINE_STOPPED, {
-            "uptime_seconds": self.uptime_seconds,
-            "total_refreshes": self._metrics.total_refreshes,
-        })
-        log_info("LiveMarketDataEngine stopped", refreshes=self._metrics.total_refreshes)
+        await self._publish_event(
+            ENGINE_STOPPED,
+            {
+                "uptime_seconds": self.uptime_seconds,
+                "total_refreshes": self._metrics.total_refreshes,
+            },
+        )
+        log_info(
+            "LiveMarketDataEngine stopped", refreshes=self._metrics.total_refreshes
+        )
 
     @property
     def uptime_seconds(self) -> float:
@@ -215,14 +225,17 @@ class LiveMarketDataEngine:
             )
 
             # Publish event
-            await self._publish_event(MARKET_DATA_UPDATED, {
-                "symbol": symbol,
-                "interval": interval,
-                "candles_count": len(result.get("candles", [])),
-                "cached": result.get("cached"),
-                "elapsed_ms": elapsed_ms,
-                "daily_refs_available": result.get("dailyRefs") is not None,
-            })
+            await self._publish_event(
+                MARKET_DATA_UPDATED,
+                {
+                    "symbol": symbol,
+                    "interval": interval,
+                    "candles_count": len(result.get("candles", [])),
+                    "cached": result.get("cached"),
+                    "elapsed_ms": elapsed_ms,
+                    "daily_refs_available": result.get("dailyRefs") is not None,
+                },
+            )
 
             return result
 
@@ -236,14 +249,22 @@ class LiveMarketDataEngine:
                 sym.last_error_time = datetime.now(timezone.utc)
                 sym.error_count += 1
 
-            log_error("Live data refresh failed", symbol=symbol, error=str(e), elapsed_ms=elapsed_ms)
+            log_error(
+                "Live data refresh failed",
+                symbol=symbol,
+                error=str(e),
+                elapsed_ms=elapsed_ms,
+            )
 
-            await self._publish_event(DATA_FETCH_FAILED, {
-                "symbol": symbol,
-                "interval": interval,
-                "error": str(e),
-                "elapsed_ms": elapsed_ms,
-            })
+            await self._publish_event(
+                DATA_FETCH_FAILED,
+                {
+                    "symbol": symbol,
+                    "interval": interval,
+                    "error": str(e),
+                    "elapsed_ms": elapsed_ms,
+                },
+            )
 
             return {"symbol": symbol, "candles": [], "error": str(e)}
 
@@ -262,10 +283,13 @@ class LiveMarketDataEngine:
         for symbol in self._symbols:
             results[symbol] = await self.refresh_symbol(symbol, interval, days)
 
-        await self._publish_event(CACHE_REFRESHED, {
-            "symbols_refreshed": len(results),
-            "interval": interval,
-        })
+        await self._publish_event(
+            CACHE_REFRESHED,
+            {
+                "symbols_refreshed": len(results),
+                "interval": interval,
+            },
+        )
 
         return results
 
@@ -300,10 +324,18 @@ class LiveMarketDataEngine:
             return None
         return {
             "symbol": sym.symbol,
-            "last_intraday_update": sym.last_intraday_update.isoformat() if sym.last_intraday_update else None,
-            "last_daily_update": sym.last_daily_update.isoformat() if sym.last_daily_update else None,
+            "last_intraday_update": (
+                sym.last_intraday_update.isoformat()
+                if sym.last_intraday_update
+                else None
+            ),
+            "last_daily_update": (
+                sym.last_daily_update.isoformat() if sym.last_daily_update else None
+            ),
             "last_error": sym.last_error,
-            "last_error_time": sym.last_error_time.isoformat() if sym.last_error_time else None,
+            "last_error_time": (
+                sym.last_error_time.isoformat() if sym.last_error_time else None
+            ),
             "update_count": sym.update_count,
             "error_count": sym.error_count,
         }
@@ -321,9 +353,17 @@ class LiveMarketDataEngine:
             "total_refreshes": self._metrics.total_refreshes,
             "total_errors": self._metrics.total_errors,
             "total_events_published": self._metrics.total_events_published,
-            "last_refresh_time": self._metrics.last_refresh_time.isoformat() if self._metrics.last_refresh_time else None,
+            "last_refresh_time": (
+                self._metrics.last_refresh_time.isoformat()
+                if self._metrics.last_refresh_time
+                else None
+            ),
             "avg_refresh_time_ms": self._metrics.avg_refresh_time_ms,
-            "start_time": self._metrics.start_time.isoformat() if self._metrics.start_time else None,
+            "start_time": (
+                self._metrics.start_time.isoformat()
+                if self._metrics.start_time
+                else None
+            ),
         }
 
     # ── Internal helpers ──

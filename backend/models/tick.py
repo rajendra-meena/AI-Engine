@@ -21,12 +21,13 @@ class Tick:
 
     Immutable to ensure consistency when passed between modules.
     """
+
     symbol: str
     price: float
     timestamp: datetime
     volume: float = 0.0
-    bid: float | None = None      # Future: broker bid
-    ask: float | None = None      # Future: broker ask
+    bid: float | None = None  # Future: broker bid
+    ask: float | None = None  # Future: broker ask
     provider: str = "yahoo"
     exchange: str = ""
 

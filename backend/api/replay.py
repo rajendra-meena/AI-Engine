@@ -75,7 +75,9 @@ async def replay_reset():
 
 @router.post("/api/replay/seek")
 async def replay_seek(
-    position: float = Query(..., description="Position: int (candle index) or float 0.0–1.0 (percent)"),
+    position: float = Query(
+        ..., description="Position: int (candle index) or float 0.0–1.0 (percent)"
+    ),
 ):
     """Seek to a position in the current replay."""
     engine = _get_engine()

@@ -16,14 +16,19 @@ from market_structure.modules.trend_detector import TrendDirection
 @dataclass
 class StructureEvent:
     event_type: str  # "bos" or "choch"
-    direction: str   # "bullish" or "bearish"
+    direction: str  # "bullish" or "bearish"
     price: float
     time: str = ""
     description: str = ""
 
     def to_dict(self) -> dict[str, Any]:
-        return {"type": self.event_type, "direction": self.direction, "price": self.price, "time": self.time,
-                "description": self.description}
+        return {
+            "type": self.event_type,
+            "direction": self.direction,
+            "price": self.price,
+            "time": self.time,
+            "description": self.description,
+        }
 
 
 class MarketPhase(str, Enum):
@@ -33,6 +38,7 @@ class MarketPhase(str, Enum):
     MARKDOWN = "markdown"
     CONSOLIDATION = "consolidation"
     UNDEFINED = "undefined"
+
 
 from enum import Enum
 
@@ -57,7 +63,9 @@ class StructureDetector:
         self._pullback_active = False
         self._consolidation_bars = 0
 
-    def update(self, candle, trend_info: dict[str, Any], swings: list[SwingPoint]) -> list[StructureEvent]:
+    def update(
+        self, candle, trend_info: dict[str, Any], swings: list[SwingPoint]
+    ) -> list[StructureEvent]:
         """Process candle + trend + swings. Returns new structure events."""
         new_events: list[StructureEvent] = []
         direction = trend_info.get("direction", "RANGING")

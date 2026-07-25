@@ -29,6 +29,7 @@ from typing import Any
 
 class ClientMessageType(str, Enum):
     """Message types a client can send to the server."""
+
     SUBSCRIBE = "subscribe"
     UNSUBSCRIBE = "unsubscribe"
     PING = "ping"
@@ -37,6 +38,7 @@ class ClientMessageType(str, Enum):
 
 class ServerMessageType(str, Enum):
     """Message types the server can send to clients."""
+
     WELCOME = "welcome"
     MARKET_DATA = "market_data"
     ENGINE_EVENT = "engine_event"
@@ -89,7 +91,9 @@ def make_welcome(client_id: str) -> dict[str, Any]:
         payload={
             "client_id": client_id,
             "protocol_version": "1.0",
-            "server_time": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+            "server_time": __import__("datetime")
+            .datetime.now(__import__("datetime").timezone.utc)
+            .isoformat(),
         },
     )
 
