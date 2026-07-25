@@ -239,4 +239,3 @@ class BacktestMetrics:
             "r_distribution": self.r_distribution,
             "sample_level": self.sample_level,
         }
-
