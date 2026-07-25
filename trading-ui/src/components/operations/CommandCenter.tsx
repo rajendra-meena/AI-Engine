@@ -187,7 +187,7 @@ export function CommandCenter() {
           </div>
 
           {/* ── Trading Block Reason ── */}
-          {blockReasons.length > 0 && (
+          {Array.isArray(blockReasons) && blockReasons.length > 0 && (
             <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3">
               <h3 className="text-xs font-bold mb-2 flex items-center gap-2 text-red-600">
                 <Ban className="w-3.5 h-3.5" /> TRADING BLOCKED
