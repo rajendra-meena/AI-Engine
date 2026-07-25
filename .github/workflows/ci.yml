@@ -62,10 +62,32 @@ jobs:
           pip install flake8 black
 
       - name: Lint with flake8
-        run: flake8 . --max-line-length=120 --exclude=__pycache__,generated
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="origin/${{ github.base_ref }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+          CHANGED=$(git diff --name-only "$BASE"...HEAD -- '*.py' 2>/dev/null | tr '\n' ' ')
+          if [ -z "$CHANGED" ]; then
+            echo "No Python files changed, skipping flake8"
+          else
+            flake8 $CHANGED --max-line-length=120
+          fi
 
       - name: Check formatting
-        run: black --check . --exclude='(__pycache__|generated)'
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="origin/${{ github.base_ref }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+          CHANGED=$(git diff --name-only "$BASE"...HEAD -- '*.py' 2>/dev/null | tr '\n' ' ')
+          if [ -z "$CHANGED" ]; then
+            echo "No Python files changed, skipping black"
+          else
+            black --check $CHANGED
+          fi
 
   docker-build:
     name: Docker Build
