@@ -47,6 +47,7 @@ from api.live import router as live_router
 from api.market_stream import router as market_stream_router
 from api.ai_analyze import router as ai_analyze_router, set_decision_service
 from api.trade_plans import router as trade_plans_router, set_trade_planner
+from api.execution import router as execution_router, set_execution_gateway
 from api.kite import router as kite_router, set_provider_factory, set_kite_risk_engine
 from services.prediction_service import initialize as init_prediction_service
 from services.live_market_engine import LiveMarketDataEngine
@@ -215,6 +216,12 @@ async def lifespan(app: FastAPI):
     trade_planner = TradePlanner(risk_engine)
     set_trade_planner(trade_planner)
 
+    # Initialize the Execution Gateway
+    from execution.gateway import ExecutionGateway
+
+    exec_gateway = ExecutionGateway(trade_lifecycle, risk_engine)
+    set_execution_gateway(exec_gateway)
+
     # Start the Multi-Timeframe Engine
     mtf_engine = MTFEngine(event_bus)
     set_mtf_engine(mtf_engine)
@@ -380,6 +387,7 @@ app.include_router(sr_router)
 app.include_router(ai_router)
 app.include_router(ai_analyze_router)
 app.include_router(trade_plans_router)
+app.include_router(execution_router)
 app.include_router(mtf_router)
 app.include_router(tick_router)
 app.include_router(strategy_router)
