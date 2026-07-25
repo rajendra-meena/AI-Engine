@@ -49,6 +49,15 @@ from live.rollout_models import (
     HumanReviewDecision, MultiCanaryTracker,
 )
 from live.rollout_governance import RolloutGovernanceEngine
+from live.multi_canary import MultiCanaryRolloutTracker, CanaryRecord, MAX_CANARY_SEQUENCE
+from live.rollout_stages import (
+    RolloutStage, RolloutRecord, validate_stage_transition,
+    get_stage_limits, STAGE_RISK_LIMITS,
+)
+from live.rollout_eligibility import RolloutEligibilityEngine, EligibilityResult
+from live.rollout_monitor import RolloutPerformanceMonitor, PerformanceSnapshot
+from live.rollback_controller import RollbackController, RollbackCheckResult, RollbackExecutionResult
+from live.progressive_rollout import ProgressiveRolloutEngine, ProgressiveRolloutError
 from live.execution_controller import Phase46ExecutionController, ExecutionResult
 
 __all__ = [
@@ -80,6 +89,13 @@ __all__ = [
     "CANARY_COMPLETED", "CANARY_FAILED", "CANARY_EXPIRED",
     "CanaryPreCheck", "CanaryPreCheckResult",
     "CanaryLifecycleManager", "CanaryLifecycleError",
+    "MultiCanaryRolloutTracker", "CanaryRecord", "MAX_CANARY_SEQUENCE",
+    "RolloutStage", "RolloutRecord", "validate_stage_transition",
+    "get_stage_limits", "STAGE_RISK_LIMITS",
+    "RolloutEligibilityEngine", "EligibilityResult",
+    "RolloutPerformanceMonitor", "PerformanceSnapshot",
+    "RollbackController", "RollbackCheckResult", "RollbackExecutionResult",
+    "ProgressiveRolloutEngine", "ProgressiveRolloutError",
     "CanaryEvaluationEngine", "CanaryEvaluationReport", "EvaluationClassification",
     "EvaluationCheck", "CategoryResult",
     "RolloutGovernanceReport", "RolloutGovernanceState",
