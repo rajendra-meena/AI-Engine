@@ -134,6 +134,22 @@ async def lifespan(app: FastAPI):
     trade_lifecycle = init_lifecycle()
     set_trade_lifecycle(trade_lifecycle)
 
+    # Initialize the P&L Engine
+    from trading.pnl_engine import init_pnl_engine
+
+    pnl_engine = init_pnl_engine()
+    from api.live import set_pnl_engine
+
+    set_pnl_engine(pnl_engine)
+
+    # Initialize the Market Subscription Manager
+    from trading.market_subscription import init_subscription_manager
+
+    sub_manager = init_subscription_manager()
+
+    # Wire P&L engine to trade lifecycle updates
+    pnl_engine.on_callback(lambda p: None)  # Placeholder for WebSocket broadcast
+
     # Start the Tick Engine
     tick_engine = TickEngine(event_bus)
     set_tick_engine(tick_engine)

@@ -19,8 +19,23 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 from trading.trade_lifecycle import get_lifecycle
+from trading.pnl_engine import get_pnl_engine, PnLEngine
 
 router = APIRouter(tags=["live"])
+
+_pnl_engine: PnLEngine | None = None
+
+
+def set_pnl_engine(engine: PnLEngine):
+    global _pnl_engine
+    _pnl_engine = engine
+
+
+def _get_pnl():
+    if _pnl_engine is not None:
+        return _pnl_engine
+    return get_pnl_engine()
+
 
 # In-memory P&L cache
 _pnl_cache: dict[str, Any] = {
@@ -46,23 +61,22 @@ def update_pnl(realized: float = 0, unrealized: float = 0):
 
 @router.get("/api/live/account")
 async def live_account():
-    """Get account summary (equity, margin, P&L)."""
+    """Get account summary (equity, margin, P&L) from P&L engine."""
+    pnl = _get_pnl().get_portfolio_pnl()
     lifecycle = get_lifecycle()
     positions = lifecycle.get_open_positions()
-    total_exposure = sum(
-        (p.entry_price or 0) * p.quantity for p in positions if p.entry_price
-    )
     return {
-        "total_equity": 100000.0 + _pnl_cache["total_pnl"],
-        "available_margin": max(0, 100000.0 - abs(total_exposure)),
-        "used_margin": abs(total_exposure),
-        "exposure": abs(total_exposure),
-        "day_pnl": round(_pnl_cache["day_pnl"], 2),
-        "unrealized_pnl": round(_pnl_cache["unrealized_pnl"], 2),
-        "realized_pnl": round(_pnl_cache["realized_pnl"], 2),
-        "total_pnl": round(_pnl_cache["total_pnl"], 2),
+        "total_equity": round(pnl.total_equity, 2),
+        "available_margin": round(pnl.available_margin, 2),
+        "used_margin": round(pnl.used_margin, 2),
+        "exposure": round(pnl.total_exposure, 2),
+        "day_pnl": round(pnl.day_pnl, 2),
+        "unrealized_pnl": round(pnl.total_unrealized, 2),
+        "realized_pnl": round(pnl.total_realized, 2),
+        "total_pnl": round(pnl.total_pnl, 2),
+        "margin_utilization_pct": round(pnl.margin_utilization_pct, 2),
         "open_positions": len(positions),
-        "last_updated": _pnl_cache["last_updated"],
+        "last_updated": pnl.last_updated,
     }
 
 
@@ -81,7 +95,7 @@ async def live_positions():
                 "direction": p.direction,
                 "quantity": p.quantity,
                 "entry_price": p.entry_price,
-                "current_price": p.entry_price,  # Will be updated via WebSocket
+                "current_price": p.entry_price,
                 "unrealized_pnl": p.pnl,
                 "pnl_percent": p.pnl_percent,
                 "stop_loss": p.stop_loss,
@@ -143,8 +157,8 @@ async def live_trade_detail(trade_id: str):
 
 @router.get("/api/live/pnl")
 async def live_pnl():
-    """Get current P&L snapshot."""
-    return _pnl_cache
+    """Get current P&L snapshot from P&L engine."""
+    return _get_pnl().get_portfolio_pnl().to_dict()
 
 
 # ── Status ──
