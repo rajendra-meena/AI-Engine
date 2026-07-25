@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react"
 import { SettingsSection } from "./SettingsSection"
 import { Wifi, WifiOff, RefreshCw, LogIn, LogOut, ExternalLink, Plug, PlugZap } from "lucide-react"
+import { useBrokerStore } from "@/store/useBrokerStore"
 
 interface BrokerState {
   authenticated: boolean
@@ -36,8 +37,21 @@ export function BrokerSettingsPanel() {
   const [status, setStatus] = useState<ConnectionStatus>("disconnected")
   const [error, setError] = useState<string | null>(null)
   const [requestToken, setRequestToken] = useState("")
-
+  const brokerStore = useBrokerStore()
   const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+
+  const syncBrokerStore = useCallback((data: Partial<BrokerState>) => {
+    if (data.authenticated && (data.user_id || data.user_name)) {
+      brokerStore.setAuth({
+        user_id: data.user_id || "",
+        user_name: data.user_name || "",
+        broker: data.broker || "ZERODHA",
+        exchange: data.exchange || "NSE",
+      })
+    } else if (!data.authenticated) {
+      brokerStore.clear()
+    }
+  }, [brokerStore])
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -45,7 +59,10 @@ export function BrokerSettingsPanel() {
       if (res.ok) {
         const data = await res.json()
         setState((s) => ({ ...s, ...data }))
-        if (data.authenticated) setStatus("connected")
+        if (data.authenticated) {
+          setStatus("connected")
+          syncBrokerStore(data)
+        }
       }
     } catch {
       // Server not available
@@ -58,6 +75,7 @@ export function BrokerSettingsPanel() {
         setState((s) => ({ ...s, ...data }))
         if (data.connected) {
           setStatus("connected")
+          if (data.connected) brokerStore.setConnected(true)
           if (data.websocket) {
             setState((s) => ({ ...s, websocket: data.websocket }))
           }
@@ -66,7 +84,7 @@ export function BrokerSettingsPanel() {
     } catch {
       // ignore
     }
-  }, [apiBase])
+  }, [apiBase, syncBrokerStore, brokerStore])
 
   useEffect(() => {
     const id = setTimeout(() => fetchStatus(), 0)
@@ -114,6 +132,7 @@ export function BrokerSettingsPanel() {
         if (data.success) {
           setStatus("connected")
           setRequestToken("")
+          syncBrokerStore({ ...state, authenticated: true })
           await handleConnect()
         } else {
           setError("Authentication failed")
@@ -137,6 +156,7 @@ export function BrokerSettingsPanel() {
       const res = await fetch(`${apiBase}/api/kite/connect`, { method: "POST" })
       if (res.ok) {
         setStatus("connected")
+        brokerStore.setConnected(true)
         await fetchStatus()
         await fetch(`${apiBase}/api/kite/ws/start`, { method: "POST" })
       } else {
@@ -156,6 +176,7 @@ export function BrokerSettingsPanel() {
       await fetch(`${apiBase}/api/kite/disconnect`, { method: "POST" })
       setStatus("disconnected")
       setError(null)
+      brokerStore.setConnected(false)
     } catch {
       // ignore
     }
@@ -167,6 +188,7 @@ export function BrokerSettingsPanel() {
       await fetch(`${apiBase}/api/kite/logout`, { method: "POST" })
       setState((s) => ({ ...s, authenticated: false, connected: false, user_id: "" }))
       setStatus("disconnected")
+      brokerStore.clear()
     } catch {
       // ignore
     }

@@ -8,6 +8,7 @@ import { useLayoutStore } from "@/store/useLayoutStore"
 import { useMarketStore } from "@/store/useMarketStore"
 import { useChartStore } from "@/store/useChartStore"
 import { useNotificationStore } from "@/store/useNotificationStore"
+import { useBrokerStore } from "@/store/useBrokerStore"
 import { NotificationBell } from "@/components/notifications/NotificationBell"
 import { NotificationDrawer } from "@/components/notifications/NotificationDrawer"
 import { ToastContainer } from "@/components/notifications/ToastContainer"
@@ -31,6 +32,7 @@ export function Header() {
   const selectedSymbol = useMarketStore((s) => s.selectedSymbol)
   const setSelectedSymbol = useMarketStore((s) => s.setSelectedSymbol)
   const setChartSymbol = useChartStore((s) => s.setSymbol)
+  const brokerUser = useBrokerStore((s) => s.user_name || s.user_id)
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMounted(true) }, [])
 
@@ -123,9 +125,10 @@ export function Header() {
 
         {/* User */}
         <button className="flex items-center gap-1.5 rounded-md px-2 py-1 text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors">
-          <div className="w-6 h-6 rounded-full bg-muted-foreground/20 flex items-center justify-center text-[10px] font-medium">
-            TR
+          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-[10px] font-medium text-white">
+            {brokerUser ? brokerUser.charAt(0).toUpperCase() : "U"}
           </div>
+          <span className="text-[10px] font-medium hidden sm:inline">{brokerUser || "User"}</span>
           <ChevronDown className="w-3 h-3" />
         </button>
       </div>
