@@ -5,13 +5,14 @@ Supports all order types with validation, retry, and slippage protection.
 """
 
 from __future__ import annotations
+from typing import Any
 
 import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 

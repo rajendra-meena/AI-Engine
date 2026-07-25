@@ -19,12 +19,13 @@ Architecture:
 """
 
 from __future__ import annotations
+from typing import Any
 
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
-from typing import Any
+
 
 from orchestrator.decision_context import DecisionContext
 from trading.trade_lifecycle import TradeLifecycleManager
