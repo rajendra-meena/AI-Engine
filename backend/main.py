@@ -50,6 +50,7 @@ from api.trade_plans import router as trade_plans_router, set_trade_planner
 from api.execution import router as execution_router, set_execution_gateway
 from api.paper import router as paper_router
 from api.performance import router as performance_router
+from api.backtest import router as backtest_router, set_backtest_runner
 from api.kite import router as kite_router, set_provider_factory, set_kite_risk_engine
 from services.prediction_service import initialize as init_prediction_service
 from services.live_market_engine import LiveMarketDataEngine
@@ -217,6 +218,12 @@ async def lifespan(app: FastAPI):
 
     trade_planner = TradePlanner(risk_engine)
     set_trade_planner(trade_planner)
+
+    # Initialize the Backtest Runner
+    from backtest.backtest_runner import BacktestRunner
+
+    backtest_runner = BacktestRunner()
+    set_backtest_runner(backtest_runner)
 
     # Initialize the Execution Gateway
     from execution.gateway import ExecutionGateway
@@ -399,6 +406,7 @@ app.include_router(trade_plans_router)
 app.include_router(execution_router)
 app.include_router(paper_router)
 app.include_router(performance_router)
+app.include_router(backtest_router)
 app.include_router(mtf_router)
 app.include_router(tick_router)
 app.include_router(strategy_router)
@@ -461,3 +469,5 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
