@@ -162,11 +162,16 @@ class KiteAuthentication:
             self._kite = kite
             self._kite.set_access_token(self._access_token)
 
-            # Extract profile info
-            profile = session_data.get("user", {})
-            self._user_id = profile.get("user_id", "")
-            self._user_name = profile.get("user_name", "")
-            self._user_email = profile.get("email", "")
+            # Extract profile info (Kite returns these at top level, not nested)
+            session_user = session_data.get("user") or session_data
+            if isinstance(session_user, dict):
+                self._user_id = session_user.get("user_id", session_data.get("user_id", ""))
+                self._user_name = session_user.get("user_name", session_data.get("user_name", ""))
+                self._user_email = session_user.get("email", session_data.get("email", ""))
+            else:
+                self._user_id = session_data.get("user_id", "")
+                self._user_name = session_data.get("user_name", "")
+                self._user_email = session_data.get("email", "")
             self._authenticated = True
             self._last_auth_time = datetime.now(timezone.utc)
 
