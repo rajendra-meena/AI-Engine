@@ -5,17 +5,18 @@ Architecture:
     TradePlan (approved)
         ↓
     ExecutionGateway.execute()
+        ├── Idempotency check
         ├── Final safety checks
         ├── Execution mode check (DISABLED/PAPER/LIVE)
         ├── Live arming check
         ├── Risk re-validation
-        ├── Idempotency check
-        ├── Paper Broker (PAPER mode)
+        ├── PaperBroker.execute() (PAPER mode)
         └── Zerodha Broker (LIVE mode)
         ↓
-    TradeLifecycleManager
-        ↓
-    Portfolio / P&L / Learning
+    PaperPosition created
+    TradeLifecycleManager updated
+    PnLEngine updated
+    SL/Target monitoring active
 """
 
 from __future__ import annotations
@@ -26,12 +27,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 
-
-from orchestrator.decision_context import DecisionContext
-from trading.trade_lifecycle import TradeLifecycleManager
 from risk.risk_engine import RiskEngine
 from risk.trade_validator import TradeIntent
-from utils.logger import log_info, log_warn
+from utils.logger import log_info, log_warn, log_error
 
 
 class ExecutionMode(str, Enum):
@@ -76,6 +74,8 @@ VALID_TRANSITIONS: dict[ExecutionStatus, list[ExecutionStatus]] = {
     ExecutionStatus.FAILED: [],
 }
 
+_IDEMPOTENCY_LIMIT = 10000
+
 
 @dataclass
 class ExecutionRecord:
@@ -94,6 +94,7 @@ class ExecutionRecord:
     execution_mode: str = "paper"
     risk_status: str = ""
     broker_order_id: str | None = None
+    trade_id: str | None = None
     status: ExecutionStatus = ExecutionStatus.PENDING
     rejection_reason: str | None = None
     safety_checks: dict[str, Any] = field(default_factory=dict)
@@ -105,6 +106,7 @@ class ExecutionRecord:
             "execution_id": self.execution_id,
             "trade_plan_id": self.trade_plan_id,
             "trace_id": self.trace_id,
+            "idempotency_key": self.idempotency_key,
             "symbol": self.symbol,
             "side": self.side,
             "quantity": self.quantity,
@@ -115,6 +117,7 @@ class ExecutionRecord:
             "execution_mode": self.execution_mode,
             "risk_status": self.risk_status,
             "broker_order_id": self.broker_order_id,
+            "trade_id": self.trade_id,
             "status": self.status.value if self.status else "pending",
             "rejection_reason": self.rejection_reason,
             "created_at": self.created_at,
@@ -125,9 +128,17 @@ class ExecutionRecord:
 class ExecutionGateway:
     """The ONLY execution entry point — every trade must pass through this."""
 
-    def __init__(self, trade_lifecycle: TradeLifecycleManager | None = None, risk_engine: RiskEngine | None = None):
+    def __init__(
+        self,
+        trade_lifecycle: Any | None = None,
+        risk_engine: RiskEngine | None = None,
+        paper_broker: Any | None = None,
+        audit_log: Any | None = None,
+    ):
         self._trade_lifecycle = trade_lifecycle
         self._risk_engine = risk_engine
+        self._paper_broker = paper_broker
+        self._audit_log = audit_log
         self._mode = ExecutionMode.DISABLED
         self._live_armed = False
         self._live_token: str | None = None
@@ -135,12 +146,25 @@ class ExecutionGateway:
         self._executions: dict[str, ExecutionRecord] = {}
         self._history: list[ExecutionRecord] = []
         self._idempotency: dict[str, ExecutionRecord] = {}
+        self._session_id = uuid.uuid4().hex[:12]
 
-    def set_trade_lifecycle(self, tlc: TradeLifecycleManager):
+    def set_trade_lifecycle(self, tlc: Any):
         self._trade_lifecycle = tlc
 
     def set_risk_engine(self, engine: RiskEngine):
         self._risk_engine = engine
+
+    def set_paper_broker(self, broker: Any):
+        self._paper_broker = broker
+
+    def set_audit_log(self, log: Any):
+        self._audit_log = log
+
+    def get_session_id(self) -> str:
+        return self._session_id
+
+    def has_paper_broker(self) -> bool:
+        return self._paper_broker is not None
 
     # ── Mode management ──
 
@@ -148,7 +172,6 @@ class ExecutionGateway:
         return self._mode.value
 
     def set_mode(self, mode: str) -> bool:
-        """Set execution mode. DISABLED by default — never auto-enable LIVE."""
         try:
             new_mode = ExecutionMode(mode)
             if new_mode == ExecutionMode.LIVE and self._mode != ExecutionMode.LIVE:
@@ -165,10 +188,8 @@ class ExecutionGateway:
     # ── Live arming ──
 
     def arm_live(self) -> dict[str, Any]:
-        """Arm LIVE execution. Returns a short-lived confirmation token."""
         if self._mode != ExecutionMode.LIVE:
             return {"armed": False, "reason": "Execution mode is not LIVE"}
-
         token = uuid.uuid4().hex[:16]
         self._live_token = token
         self._token_expiry = datetime.now(timezone.utc) + timedelta(minutes=5)
@@ -211,9 +232,10 @@ class ExecutionGateway:
         trade_plan_id: str = "",
         trace_id: str = "",
         idempotency_key: str = "",
+        decision_id: str = "",
+        analysis_cycle_id: str = "",
         live_token: str = "",
     ) -> ExecutionRecord:
-        """Execute a trade through the controlled gateway."""
         eid = f"exec_{uuid.uuid4().hex[:12]}"
         now = datetime.now(timezone.utc).isoformat()
 
@@ -233,12 +255,12 @@ class ExecutionGateway:
             updated_at=now,
         )
 
-        # Idempotency check
+        # 1. Idempotency check — same key returns cached result
         if idempotency_key and idempotency_key in self._idempotency:
             log_info("Execution: idempotency hit", key=idempotency_key)
             return self._idempotency[idempotency_key]
 
-        # Safety checks
+        # 2. Safety checks
         checks = self._run_safety_checks(side, price, quantity, stop_loss, target, live_token)
         record.safety_checks = checks
         failed_checks = [name for name, passed in checks.items() if not passed]
@@ -250,7 +272,7 @@ class ExecutionGateway:
             log_warn("Execution: blocked by safety checks", reason=record.rejection_reason)
             return record
 
-        # Final Risk re-validation
+        # 3. Risk re-validation
         record.status = ExecutionStatus.VALIDATING
         if self._risk_engine:
             intent = TradeIntent(
@@ -262,7 +284,6 @@ class ExecutionGateway:
                 product="MIS",
                 exchange="NSE",
                 strategy="execution_gateway",
-                ai_score=float(record.risk_status) if record.risk_status else None,
                 stop_loss=stop_loss,
                 take_profit=target,
                 tag=trace_id or eid,
@@ -277,9 +298,9 @@ class ExecutionGateway:
 
         record.status = ExecutionStatus.APPROVED
 
-        # Execute via appropriate broker
+        # 4. Execute via appropriate broker
         record.status = ExecutionStatus.SUBMITTING
-        if self._mode == ExecutionMode.PAPER or self._mode == ExecutionMode.DISABLED:
+        if self._mode in (ExecutionMode.PAPER, ExecutionMode.DISABLED):
             result = self._paper_execute(record)
         elif self._mode == ExecutionMode.LIVE and self.is_live_armed():
             result = self._live_execute(record)
@@ -289,19 +310,21 @@ class ExecutionGateway:
             self._store(record, idempotency_key)
             return record
 
+        # 5. Validate broker response — must not fabricate success
+        if not result.get("success", False):
+            record.status = ExecutionStatus.FAILED
+            record.rejection_reason = result.get("reason", "Broker execution failed")
+            record.broker_order_id = result.get("broker_order_id")
+            self._store(record, idempotency_key)
+            self._audit("execution_failed", record, reason=record.rejection_reason)
+            return record
+
         record.actual_price = result.get("price", price)
         record.broker_order_id = result.get("broker_order_id")
-        record.status = ExecutionStatus(result.get("status", "submitted"))
+        record.trade_id = result.get("trade_id")
+        record.status = ExecutionStatus(result.get("status", "filled"))
         self._store(record, idempotency_key)
-
-        # Feed into Trade Lifecycle
-        if self._trade_lifecycle and record.status in (
-            ExecutionStatus.SUBMITTED, ExecutionStatus.ACKNOWLEDGED, ExecutionStatus.FILLED
-        ):
-            try:
-                self._feed_lifecycle(record)
-            except Exception as e:
-                log_warn("Execution: lifecycle feed failed", error=str(e))
+        self._audit("execution_filled", record)
 
         return record
 
@@ -329,6 +352,7 @@ class ExecutionGateway:
                 )
             ),
             "geometry_valid": self._check_geometry(side, price, stop_loss, target),
+            "paper_broker_available": self._paper_broker is not None or self._mode == ExecutionMode.LIVE,
         }
         if self._mode == ExecutionMode.LIVE:
             checks["live_armed"] = self.is_live_armed()
@@ -354,45 +378,54 @@ class ExecutionGateway:
                 return False
         return True
 
-    # ── Paper execution ──
+    # ── Paper execution — delegates to PaperBroker ──
 
     def _paper_execute(self, record: ExecutionRecord) -> dict[str, Any]:
-        log_info("Execution: paper execute", symbol=record.symbol, side=record.side, qty=record.quantity)
-        return {
-            "price": record.requested_price or 0,
-            "broker_order_id": f"paper_{uuid.uuid4().hex[:12]}",
-            "status": "filled" if record.requested_price and record.requested_price > 0 else "rejected",
-        }
+        if not self._paper_broker:
+            log_error("Execution: PaperBroker not configured")
+            return {"success": False, "status": "failed", "reason": "PaperBroker not configured"}
+
+        log_info("Execution: delegating to PaperBroker",
+                 symbol=record.symbol, side=record.side, qty=record.quantity)
+
+        result = self._paper_broker.execute(
+            symbol=record.symbol,
+            side=record.side,
+            quantity=record.quantity,
+            price=record.requested_price,
+            stop_loss=record.stop_loss,
+            target=record.target,
+            trade_plan_id=record.trade_plan_id,
+            trace_id=record.trace_id,
+            execution_id=record.execution_id,
+        )
+        return result
 
     # ── Live execution (placeholder for Zerodha integration) ──
 
     def _live_execute(self, record: ExecutionRecord) -> dict[str, Any]:
         log_info("Execution: LIVE execute", symbol=record.symbol, side=record.side, qty=record.quantity)
         return {
+            "success": True,
             "price": record.requested_price or 0,
             "broker_order_id": "",
             "status": "submitted",
         }
 
-    # ── Trade lifecycle feed ──
+    # ── Audit ──
 
-    def _feed_lifecycle(self, record: ExecutionRecord):
-        if not self._trade_lifecycle:
-            return
-        trade = self._trade_lifecycle.create_trade(
-            DecisionContext(
-                symbol=record.symbol,
-                exchange="NSE",
-                trace_id=record.trace_id,
-                ai_direction=record.side,
-                entry_price=record.actual_price or record.requested_price,
-                stop_loss=record.stop_loss,
-                target=record.target,
-                quantity=record.quantity,
-                correlation_id=record.idempotency_key or record.execution_id,
-            )
-        )
-        self._trade_lifecycle.submit_entry_order(trade.id)
+    def _audit(self, event_type: str, record: ExecutionRecord, reason: str = ""):
+        if self._audit_log:
+            try:
+                self._audit_log.record(
+                    event_type=event_type,
+                    severity="info" if "filled" in event_type else "warn",
+                    correlation_id=record.idempotency_key or record.execution_id,
+                    reason=reason or f"{record.side} {record.quantity} {record.symbol} @ {record.actual_price}",
+                    details=record.to_dict(),
+                )
+            except Exception as e:
+                log_warn("Execution: audit log failed", error=str(e))
 
     # ── Storage ──
 
@@ -400,12 +433,19 @@ class ExecutionGateway:
         self._executions[record.execution_id] = record
         self._history.append(record)
         if idempotency_key:
+            if len(self._idempotency) >= _IDEMPOTENCY_LIMIT:
+                oldest_key = next(iter(self._idempotency))
+                del self._idempotency[oldest_key]
             self._idempotency[idempotency_key] = record
 
     # ── Queries ──
 
     def get_execution(self, execution_id: str) -> ExecutionRecord | None:
         return self._executions.get(execution_id)
+
+    def get_execution_by_key(self, idempotency_key: str) -> ExecutionRecord | None:
+        """Retrieve a previously completed execution by its idempotency key."""
+        return self._idempotency.get(idempotency_key)
 
     def get_history(self, limit: int = 50) -> list[dict[str, Any]]:
         return [e.to_dict() for e in self._history[-limit:]]
@@ -415,12 +455,15 @@ class ExecutionGateway:
         return {
             "mode": self._mode.value,
             "live_armed": self.is_live_armed() if self._mode == ExecutionMode.LIVE else False,
+            "session_id": self._session_id,
+            "paper_broker_configured": self._paper_broker is not None,
             "total_executions": len(self._history),
             "last_execution": self._history[-1].to_dict() if self._history else None,
             "recent_results": {
                 "filled": sum(1 for e in recent if e.status == ExecutionStatus.FILLED),
                 "blocked": sum(1 for e in recent if e.status == ExecutionStatus.BLOCKED),
                 "rejected": sum(1 for e in recent if e.status == ExecutionStatus.REJECTED),
+                "failed": sum(1 for e in recent if e.status == ExecutionStatus.FAILED),
             },
             "idempotency_cache_size": len(self._idempotency),
         }

@@ -429,7 +429,7 @@ def _mark_analyzed(symbol: str):
     _last_analysis_times[symbol] = time.time()
 
 
-async def _run_fresh_analysis(symbol: str) -> dict[str, Any] | None:
+async def _run_fresh_analysis(symbol: str, analysis_cycle_id: str = "") -> dict[str, Any] | None:
     """
     Run the complete fresh-data analysis pipeline for a single symbol.
 
@@ -493,7 +493,8 @@ async def _run_fresh_analysis(symbol: str) -> dict[str, Any] | None:
     # 5. If opportunity qualifies, bridge to execution
     if result and result.get("opportunity_score", 0) >= 50 and result.get("direction") in ("BUY", "SELL"):
         if not result.get("reject_reasons"):
-            exec_result = await _try_execute_trade(symbol, result, ai_snap, regime_snap)
+            exec_result = await _try_execute_trade(symbol, result, ai_snap, regime_snap,
+                                                   analysis_cycle_id=analysis_cycle_id)
             if exec_result:
                 result["execution"] = exec_result
 
@@ -547,8 +548,11 @@ async def _handle_candle_closed(event: BusEvent):
                 return
             _idempotency_seen.add(idempotency_key)
 
+        # Extract analysis_cycle_id from candle event for idempotent execution
+        analysis_cycle_id = payload.get("analysis_cycle_id", "")
+
         # Run fresh analysis
-        result = await _run_fresh_analysis(symbol)
+        result = await _run_fresh_analysis(symbol, analysis_cycle_id=analysis_cycle_id)
         if result:
             _engine_state = ENGINE_STATE_SCANNING
             if result.get("execution"):
@@ -798,15 +802,19 @@ async def _try_execute_trade(
     result: dict[str, Any],
     ai_snap: dict[str, Any],
     regime_snap: dict | None,
+    analysis_cycle_id: str = "",
 ) -> dict[str, Any] | None:
     """
     Bridge from scoring to execution.
 
     Called when an opportunity scores >= 50 with a clear BUY/SELL direction
     and no rejection reasons. Builds a TradePlan, validates risk, and
-    submits through the ExecutionGateway (paper mode) or PaperBroker directly.
+    submits through the ExecutionGateway which delegates to PaperBroker.
 
     Returns the execution result dict, or None if execution was skipped/blocked.
+
+    Execution-level idempotency: uses analysis_cycle_id + symbol as the
+    canonical key so the same candle cycle never produces duplicate trades.
     """
     if not result or result.get("opportunity_score", 0) < 50:
         return None
@@ -815,7 +823,7 @@ async def _try_execute_trade(
     if result.get("reject_reasons"):
         return None
 
-    # Runtime mode check — only OBSERVE/SHADOW allowed (Phase 39)
+    # Runtime mode check — only OBSERVE/SHADOW/PAPER allowed
     runtime_mode = _get_runtime_mode()
     if runtime_mode not in ("observe", "shadow", "paper"):
         log_info("AutoTrade: execution blocked by runtime mode", mode=runtime_mode, symbol=symbol)
@@ -836,6 +844,34 @@ async def _try_execute_trade(
     if not market_price or market_price <= 0:
         log_info("AutoTrade: no market price for execution", symbol=symbol)
         return None
+
+    # ── Position gate ──
+    # Reject if there's already an open position in the same or opposite direction.
+    if _paper_broker:
+        existing_pos = _paper_broker.get_position(symbol)
+        if existing_pos:
+            pos_direction = existing_pos.direction
+            expected_pos = "LONG" if direction == "BUY" else "SHORT"
+            if pos_direction == expected_pos:
+                log_info("AutoTrade: execution blocked — position already open",
+                         symbol=symbol, existing=pos_direction, attempted=direction)
+                return {"status": "blocked",
+                        "reason": f"Position already open: {pos_direction} on {symbol}"}
+            else:
+                log_info("AutoTrade: execution blocked — opposite position active",
+                         symbol=symbol, existing=pos_direction, attempted=direction)
+                return {"status": "blocked",
+                        "reason": f"Opposite position active: {pos_direction} on {symbol}, cannot {direction}"}
+
+    # ── Execution-level idempotency ──
+    # The same analysis_cycle_id + symbol must not produce duplicate trades.
+    exec_idempotency_key = f"exec_{symbol}_{analysis_cycle_id}" if analysis_cycle_id else ""
+    if exec_idempotency_key and _exec_gateway:
+        existing_record = _exec_gateway.get_execution_by_key(exec_idempotency_key)
+        if existing_record:
+            log_info("AutoTrade: idempotency hit — trade already executed for this cycle",
+                     symbol=symbol, cycle=analysis_cycle_id)
+            return existing_record
 
     # Build an AIDecision from the scoring snapshot
     try:
@@ -885,49 +921,43 @@ async def _try_execute_trade(
                  symbol=symbol, reason=plan.risk_block_reason)
         return None
 
-    # Execute via ExecutionGateway (paper mode)
-    if _exec_gateway:
-        try:
-            record = _exec_gateway.execute(
-                symbol=symbol,
-                side=direction,
-                quantity=plan.position_size,
-                price=plan.entry_price,
-                stop_loss=plan.stop_price,
-                target=plan.target_price,
-                trade_plan_id=plan.plan_id,
-                trace_id=plan.trace_id,
-                idempotency_key=f"auto_{symbol}_{plan.plan_id}",
-            )
-            log_info("AutoTrade: execution submitted via gateway",
-                     symbol=symbol, side=direction, qty=plan.position_size,
-                     status=record.status.value if record.status else "unknown")
-            return record.to_dict()
-        except Exception as e:
-            log_warn("AutoTrade: ExecutionGateway.execute failed", symbol=symbol, error=str(e))
+    # Execute via ExecutionGateway (the ONLY execution path)
+    if not _exec_gateway:
+        log_warn("AutoTrade: ExecutionGateway not available — no execution path", symbol=symbol)
+        return None
 
-    # Fallback: execute via PaperBroker directly
-    if _paper_broker:
-        try:
-            result = _paper_broker.execute(
-                symbol=symbol,
-                side=direction,
-                quantity=plan.position_size,
-                price=plan.entry_price,
-                stop_loss=plan.stop_price,
-                target=plan.target_price,
-                trade_plan_id=plan.plan_id,
-                trace_id=plan.trace_id,
-            )
-            log_info("AutoTrade: execution submitted via PaperBroker",
-                     symbol=symbol, side=direction, qty=plan.position_size,
-                     success=result.get("success", False))
-            return result
-        except Exception as e:
-            log_warn("AutoTrade: PaperBroker.execute failed", symbol=symbol, error=str(e))
+    try:
+        record = _exec_gateway.execute(
+            symbol=symbol,
+            side=direction,
+            quantity=plan.position_size,
+            price=plan.entry_price,
+            stop_loss=plan.stop_price,
+            target=plan.target_price,
+            trade_plan_id=plan.plan_id,
+            trace_id=plan.trace_id,
+            idempotency_key=exec_idempotency_key,
+            decision_id=decision.decision_id,
+            analysis_cycle_id=analysis_cycle_id,
+        )
+        log_info("AutoTrade: execution submitted via gateway",
+                 symbol=symbol, side=direction, qty=plan.position_size,
+                 status=record.status.value if record.status else "unknown")
 
-    log_warn("AutoTrade: no execution path available", symbol=symbol)
-    return None
+        # Validate that execution actually produced a position (not a stub)
+        if record.status.value == "filled" and _paper_broker:
+            pos = _paper_broker.get_position(symbol)
+            if not pos:
+                log_error("AutoTrade: gateway reported filled but no PaperPosition exists",
+                          symbol=symbol, exec_id=record.execution_id)
+                return {"status": "failed",
+                        "reason": "Gateway reported filled but no position created"}
+
+        return record.to_dict()
+
+    except Exception as e:
+        log_warn("AutoTrade: ExecutionGateway.execute failed", symbol=symbol, error=str(e))
+        return None
 
 
 def _snap_kwargs(snap: dict | None) -> dict:

@@ -320,6 +320,11 @@ async def lifespan(app: FastAPI):
     paper_broker = init_paper_broker(trade_lifecycle, pnl_engine, LifecycleEventService(event_bus))
     paper_broker.start()
 
+    # Wire PaperBroker into ExecutionGateway — single authoritative execution path
+    exec_gateway.set_paper_broker(paper_broker)
+    exec_gateway.set_mode("paper")
+    exec_gateway.set_audit_log(al if 'al' in dir() else None)
+
     # Start the Multi-Timeframe Engine
     mtf_engine = MTFEngine(event_bus)
     set_mtf_engine(mtf_engine)

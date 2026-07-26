@@ -1177,9 +1177,12 @@ class TestExecutionBridge:
         assert gw.get_mode() == ExecutionMode.DISABLED.value
 
     def test_gateway_paper_mode_allows_execution(self):
-        """ExecutionGateway in PAPER mode should allow execution."""
+        """ExecutionGateway in PAPER mode with broker should allow execution."""
         from execution.gateway import ExecutionGateway, ExecutionMode
-        gw = ExecutionGateway()
+        from execution.paper_broker import PaperBroker
+        broker = PaperBroker()
+        broker.start()
+        gw = ExecutionGateway(paper_broker=broker)
         gw.set_mode("paper")
         assert gw.get_mode() == ExecutionMode.PAPER.value
         record = gw.execute(
@@ -1270,3 +1273,258 @@ class TestExecutionBridge:
         acct = broker.get_account()
         assert acct.closed_trades == 1
         assert acct.total_realized_pnl > 0
+
+
+# ── Paper Execution Path Correction Tests ──
+
+
+class TestPaperExecutionPathCorrection:
+    """Verify the corrected execution path: Gateway delegates to PaperBroker (no stub)."""
+
+    def test_gateway_delegates_to_paper_broker(self):
+        """ExecutionGateway._paper_execute must delegate to PaperBroker, not fabricate result."""
+        from execution.gateway import ExecutionGateway
+        from execution.paper_broker import PaperBroker
+
+        broker = PaperBroker()
+        broker.start()
+        gw = ExecutionGateway(paper_broker=broker)
+        gw.set_mode("paper")
+
+        record = gw.execute(
+            symbol="TEST", side="BUY", quantity=5,
+            price=100.0, stop_loss=98.0, target=105.0,
+            trade_plan_id="plan_001",
+        )
+
+        assert record.status.value == "filled"
+        assert broker.get_position("TEST") is not None
+        assert broker.get_position("TEST").quantity == 5
+
+    def test_gateway_without_paper_broker_fails(self):
+        """ExecutionGateway without PaperBroker must block execution."""
+        from execution.gateway import ExecutionGateway
+
+        gw = ExecutionGateway(paper_broker=None)
+        gw.set_mode("paper")
+
+        record = gw.execute(
+            symbol="TEST", side="BUY", quantity=1,
+            price=100.0, stop_loss=99.0, target=102.0,
+        )
+
+        assert record.status.value == "blocked"
+        assert "paper_broker_available" in str(record.safety_checks)
+
+    def test_no_fallback_to_direct_paper_broker(self):
+        """_try_execute_trade must NOT have a direct PaperBroker fallback path."""
+        import inspect
+        from api.auto_trade import _try_execute_trade
+        source = inspect.getsource(_try_execute_trade)
+        assert "Fallback: execute via PaperBroker directly" not in source
+        assert "_paper_broker.execute(" not in source.split("ExecutionGateway")[0]
+
+    def test_position_gate_same_direction_blocked(self):
+        """_try_execute_trade must block same-direction duplicate positions."""
+        import asyncio
+        from api.auto_trade import _try_execute_trade, set_auto_trade_paper_broker
+        from execution.paper_broker import PaperBroker
+
+        broker = PaperBroker()
+        broker.start()
+        set_auto_trade_paper_broker(broker)
+
+        # Open a BUY position
+        broker.execute(symbol="TEST", side="BUY", quantity=10, price=100.0)
+
+        result = {"opportunity_score": 70, "direction": "BUY", "reject_reasons": []}
+        ai_snap = {"market_snapshot": {"close": 105.0}, "score": 70, "confidence": 80, "decision_id": "d1", "trace_id": "t1"}
+
+        out = asyncio.run(_try_execute_trade("TEST", result, ai_snap, None))
+        assert out is not None
+        assert out.get("status") == "blocked"
+        assert "already open" in out.get("reason", "").lower()
+
+    def test_position_gate_opposite_direction_blocked(self):
+        """_try_execute_trade must block opposite-direction when position active."""
+        import asyncio
+        from api.auto_trade import _try_execute_trade, set_auto_trade_paper_broker
+        from execution.paper_broker import PaperBroker
+
+        broker = PaperBroker()
+        broker.start()
+        set_auto_trade_paper_broker(broker)
+
+        # Open a BUY position
+        broker.execute(symbol="TEST", side="BUY", quantity=10, price=100.0)
+
+        result = {"opportunity_score": 70, "direction": "SELL", "reject_reasons": []}
+        ai_snap = {"market_snapshot": {"close": 105.0}, "score": 70, "confidence": 80, "decision_id": "d1", "trace_id": "t1"}
+
+        out = asyncio.run(_try_execute_trade("TEST", result, ai_snap, None))
+        assert out is not None
+        assert out.get("status") == "blocked"
+        assert "opposite" in out.get("reason", "").lower()
+
+    def test_idempotency_prevents_duplicate_execution(self):
+        """Same analysis_cycle_id must not produce duplicate trades."""
+        from execution.gateway import ExecutionGateway
+        from execution.paper_broker import PaperBroker
+
+        broker = PaperBroker()
+        broker.start()
+        gw = ExecutionGateway(paper_broker=broker)
+        gw.set_mode("paper")
+
+        key = "exec_TEST_cycle_abc123"
+        r1 = gw.execute(symbol="TEST", side="BUY", quantity=1, price=100.0,
+                        stop_loss=99.0, target=102.0, idempotency_key=key)
+        r2 = gw.execute(symbol="TEST", side="BUY", quantity=1, price=100.0,
+                        stop_loss=99.0, target=102.0, idempotency_key=key)
+
+        assert r1.execution_id == r2.execution_id
+        positions = broker.get_positions()
+        assert len(positions) == 1
+
+    def test_paper_broker_opposite_direction_blocked(self):
+        """PaperBroker must block opposite-direction execution."""
+        from execution.paper_broker import PaperBroker
+
+        broker = PaperBroker()
+        broker.start()
+        broker.execute(symbol="TEST", side="BUY", quantity=10, price=100.0)
+
+        result = broker.execute(symbol="TEST", side="SELL", quantity=10, price=100.0)
+        assert result["success"] is False
+        assert "opposite" in result.get("reason", "").lower()
+
+    def test_paper_broker_close_logs_errors(self):
+        """PaperBroker._close_position must log errors, not swallow them."""
+        from execution.paper_broker import PaperBroker
+
+        class BrokenPnL:
+            def remove_position(self, sym):
+                raise RuntimeError("PnL engine broken")
+            def add_realized_pnl(self, pnl):
+                pass
+            def update_price(self, sym, price):
+                pass
+            def update_position(self, *a, **kw):
+                pass
+            def reset(self):
+                pass
+
+        broker = PaperBroker(pnl_engine=BrokenPnL())
+        broker.start()
+        broker.execute(symbol="TEST", side="BUY", quantity=10, price=100.0)
+
+        # Close should log error, not silently pass
+        trade_id = list(broker._positions.keys())[0]
+        broker._close_position(trade_id, 102.0, "target")
+
+        # Position should still be removed from paper broker
+        assert broker.get_position("TEST") is None
+
+    def test_paper_broker_tick_update_logs_errors(self):
+        """PaperBroker.on_tick must log P&L errors, not swallow them."""
+        from datetime import datetime, timezone
+        from execution.paper_broker import PaperBroker
+        from models.tick import Tick
+
+        class BrokenPnL:
+            def update_price(self, sym, price):
+                raise RuntimeError("PnL broken")
+            def remove_position(self, sym):
+                pass
+            def add_realized_pnl(self, pnl):
+                pass
+            def update_position(self, *a, **kw):
+                pass
+            def reset(self):
+                pass
+
+        broker = PaperBroker(pnl_engine=BrokenPnL())
+        broker.start()
+        broker.execute(symbol="TEST", side="BUY", quantity=10, price=100.0, stop_loss=98.0, target=105.0)
+
+        tick = Tick(symbol="TEST", price=102.0, timestamp=datetime.now(timezone.utc), volume=100)
+        broker.on_tick(tick)  # Should not raise despite PnL error
+
+        pos = broker.get_position("TEST")
+        assert pos is not None
+        assert pos.current_price == 102.0
+
+    def test_execution_record_has_decision_id(self):
+        """ExecutionGateway must accept and store decision_id."""
+        from execution.gateway import ExecutionGateway
+        from execution.paper_broker import PaperBroker
+
+        broker = PaperBroker()
+        broker.start()
+        gw = ExecutionGateway(paper_broker=broker)
+        gw.set_mode("paper")
+
+        record = gw.execute(
+            symbol="TEST", side="BUY", quantity=1, price=100.0,
+            stop_loss=99.0, target=102.0,
+            decision_id="dec_test_123",
+            analysis_cycle_id="cycle_456",
+        )
+
+        assert record.execution_id
+        assert record.trade_id is not None
+
+    def test_full_execution_chain_gateway_to_broker_to_position(self):
+        """End-to-end: Gateway → PaperBroker → PaperPosition → tick → close."""
+        from datetime import datetime, timezone
+        from execution.gateway import ExecutionGateway
+        from execution.paper_broker import PaperBroker
+        from models.tick import Tick
+
+        broker = PaperBroker()
+        broker.start()
+        gw = ExecutionGateway(paper_broker=broker)
+        gw.set_mode("paper")
+
+        # Open
+        record = gw.execute(symbol="TEST", side="BUY", quantity=10,
+                            price=100.0, stop_loss=98.0, target=105.0)
+        assert record.status.value == "filled"
+        assert broker.get_position("TEST") is not None
+
+        # Tick updates
+        broker.on_tick(Tick(symbol="TEST", price=103.0,
+                            timestamp=datetime.now(timezone.utc), volume=100))
+        assert broker.get_position("TEST").unrealized_pnl == 30.0
+
+        # Close at target
+        broker.on_tick(Tick(symbol="TEST", price=105.0,
+                            timestamp=datetime.now(timezone.utc), volume=100))
+        assert broker.get_position("TEST") is None
+        assert broker.get_account().closed_trades == 1
+        assert broker.get_account().total_realized_pnl == 50.0
+
+    def test_gateway_blocked_mode_prevents_execution(self):
+        """ExecutionGateway in DISABLED mode must block execution."""
+        from execution.gateway import ExecutionGateway
+
+        gw = ExecutionGateway()
+        record = gw.execute(symbol="TEST", side="BUY", quantity=1,
+                            price=100.0, stop_loss=99.0, target=102.0)
+
+        assert record.status.value == "blocked"
+
+    def test_gateway_geometry_check_rejects_bad_sl(self):
+        """ExecutionGateway must reject stop loss on wrong side of entry."""
+        from execution.gateway import ExecutionGateway
+        from execution.paper_broker import PaperBroker
+
+        broker = PaperBroker()
+        broker.start()
+        gw = ExecutionGateway(paper_broker=broker)
+        gw.set_mode("paper")
+
+        record = gw.execute(symbol="TEST", side="BUY", quantity=1,
+                            price=100.0, stop_loss=101.0, target=102.0)
+        assert record.status.value == "blocked"
+        assert "stop_loss" in record.rejection_reason.lower() or "geometry" in record.rejection_reason.lower()

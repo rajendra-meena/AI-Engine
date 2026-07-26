@@ -30,7 +30,7 @@ from trading.trade_lifecycle import TradeLifecycleManager
 from trading.pnl_engine import PnLEngine
 from trading.event_service import LifecycleEventService
 from models.tick import Tick
-from utils.logger import log_info, log_warn
+from utils.logger import log_info, log_warn, log_error
 
 
 def _now() -> str:
@@ -201,9 +201,14 @@ class PaperBroker:
             return {"success": False, "status": "blocked", "reason": "Paper trading not running"}
 
         existing = self.get_position(symbol)
-        if existing and existing.direction == ("LONG" if side == "BUY" else "SHORT"):
-            reason = f"Existing {existing.direction} position on {symbol}"
-            return {"success": False, "status": "blocked", "reason": reason}
+        if existing:
+            expected_direction = "LONG" if side == "BUY" else "SHORT"
+            if existing.direction == expected_direction:
+                reason = f"Existing {existing.direction} position on {symbol}"
+                return {"success": False, "status": "blocked", "reason": reason}
+            else:
+                reason = f"Opposite {existing.direction} position active on {symbol}, cannot {side}"
+                return {"success": False, "status": "blocked", "reason": reason}
 
         entry = price or 0
         if entry <= 0:
@@ -296,8 +301,9 @@ class PaperBroker:
             if self._pnl_engine:
                 try:
                     self._pnl_engine.update_price(pos.symbol, price)
-                except Exception:
-                    pass
+                except Exception as e:
+                    log_warn("PaperBroker: P&L price update failed",
+                             symbol=pos.symbol, error=str(e))
 
             # Check SL
             if pos.stop_loss is not None:
@@ -346,14 +352,16 @@ class PaperBroker:
             try:
                 self._pnl_engine.remove_position(pos.symbol)
                 self._pnl_engine.add_realized_pnl(realized)
-            except Exception:
-                pass
+            except Exception as e:
+                log_error("PaperBroker: P&L close update failed",
+                          symbol=pos.symbol, trade_id=trade_id, pnl=realized, error=str(e))
 
         if self._trade_lifecycle:
             try:
                 self._trade_lifecycle.close_trade(trade_id, exit_price)
-            except Exception:
-                pass
+            except Exception as e:
+                log_error("PaperBroker: lifecycle close failed",
+                          symbol=pos.symbol, trade_id=trade_id, error=str(e))
 
         record = pos.to_dict()
         record["exit_price"] = exit_price
