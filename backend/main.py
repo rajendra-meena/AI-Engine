@@ -75,6 +75,8 @@ from api.auto_trade import (
     set_auto_trade_event_bus,
     set_auto_trade_runtime_mgr,
     set_auto_trade_zerodha_engine,
+    set_auto_trade_exec_gateway,
+    set_auto_trade_paper_broker,
 )
 from services.prediction_service import initialize as init_prediction_service
 from services.live_market_engine import LiveMarketDataEngine
@@ -333,6 +335,8 @@ async def lifespan(app: FastAPI):
     set_auto_trade_market_service(market_service)
     set_auto_trade_event_bus(event_bus)
     set_auto_trade_runtime_mgr(rm if 'rm' in dir() else None)
+    set_auto_trade_exec_gateway(exec_gateway)
+    set_auto_trade_paper_broker(paper_broker)
 
     # Initialize the Zerodha Market Data Engine (Auto Trade data source)
     from services.zerodha_market_data_engine import ZerodhaMarketDataEngine
@@ -411,10 +415,16 @@ async def lifespan(app: FastAPI):
 
     zerodha_engine.set_warmup_feed_callback(_feed_warmup_candles)
 
-    # Wire tick callback from Zerodha engine to TickEngine
-    zerodha_engine.set_tick_callback(
-        lambda tick: asyncio.ensure_future(tick_engine.publish_tick(tick))
-    )
+    # Wire tick callback from Zerodha engine to TickEngine and PaperBroker
+    def _on_zerodha_tick(tick):
+        asyncio.ensure_future(tick_engine.publish_tick(tick))
+        if paper_broker and paper_broker.is_running:
+            try:
+                paper_broker.on_tick(tick)
+            except Exception:
+                pass
+
+    zerodha_engine.set_tick_callback(_on_zerodha_tick)
 
     # Wire Zerodha engine into LiveExecutionGate for stale-data checks
     live_exec_gate.set_zerodha_engine(zerodha_engine)

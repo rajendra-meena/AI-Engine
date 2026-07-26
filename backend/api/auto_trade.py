@@ -81,6 +81,8 @@ from trading.trade_lifecycle import TradeLifecycleManager, get_lifecycle
 from trading.signal import TradeSignal
 from execution.kill_switch import KillSwitch
 from execution.execution_audit import ExecutionAuditLog
+from execution.gateway import ExecutionGateway
+from execution.paper_broker import PaperBroker
 from trading.runtime_mode import RuntimeModeManager
 from services.market_data_service import MarketDataService
 from services.zerodha_market_data_engine import ZerodhaMarketDataEngine
@@ -115,6 +117,8 @@ _event_bus: EventBus | None = None
 _runtime_mgr: RuntimeModeManager | None = None
 _zerodha_engine: ZerodhaMarketDataEngine | None = None
 _freshness_tracker: SymbolFreshnessTracker | None = None
+_exec_gateway: ExecutionGateway | None = None
+_paper_broker: PaperBroker | None = None
 
 # Auto-analysis engine state
 _engine_running = False
@@ -212,6 +216,18 @@ def set_auto_trade_zerodha_engine(engine: ZerodhaMarketDataEngine):
     _zerodha_engine = engine
     if engine:
         _freshness_tracker = engine.freshness_tracker
+
+
+def set_auto_trade_exec_gateway(gateway: ExecutionGateway):
+    """Set the Execution Gateway used by Auto Trade for order execution."""
+    global _exec_gateway
+    _exec_gateway = gateway
+
+
+def set_auto_trade_paper_broker(broker: PaperBroker):
+    """Set the Paper Broker used by Auto Trade for shadow/paper trades."""
+    global _paper_broker
+    _paper_broker = broker
 
 
 # ── Helpers ──
@@ -474,6 +490,13 @@ async def _run_fresh_analysis(symbol: str) -> dict[str, Any] | None:
     # 4. Build opportunity score from fresh data
     result = _build_opportunity_score(symbol, ai_snap, regime_snap)
 
+    # 5. If opportunity qualifies, bridge to execution
+    if result and result.get("opportunity_score", 0) >= 50 and result.get("direction") in ("BUY", "SELL"):
+        if not result.get("reject_reasons"):
+            exec_result = await _try_execute_trade(symbol, result, ai_snap, regime_snap)
+            if exec_result:
+                result["execution"] = exec_result
+
     _mark_analyzed(symbol)
     return result
 
@@ -528,6 +551,12 @@ async def _handle_candle_closed(event: BusEvent):
         result = await _run_fresh_analysis(symbol)
         if result:
             _engine_state = ENGINE_STATE_SCANNING
+            if result.get("execution"):
+                log_info("AutoTrade: trade executed from candle close",
+                         symbol=symbol,
+                         direction=result.get("direction"),
+                         score=result.get("opportunity_score"),
+                         exec_status=result["execution"].get("status", "unknown"))
 
     except Exception as e:
         log_error("AutoTrade: candle closed handler error", error=str(e))
@@ -762,6 +791,143 @@ def _get_freshness_status(symbol: str) -> str:
         if sf:
             return sf.overall_freshness
     return FRESHNESS_LIVE
+
+
+async def _try_execute_trade(
+    symbol: str,
+    result: dict[str, Any],
+    ai_snap: dict[str, Any],
+    regime_snap: dict | None,
+) -> dict[str, Any] | None:
+    """
+    Bridge from scoring to execution.
+
+    Called when an opportunity scores >= 50 with a clear BUY/SELL direction
+    and no rejection reasons. Builds a TradePlan, validates risk, and
+    submits through the ExecutionGateway (paper mode) or PaperBroker directly.
+
+    Returns the execution result dict, or None if execution was skipped/blocked.
+    """
+    if not result or result.get("opportunity_score", 0) < 50:
+        return None
+    if result.get("direction") not in ("BUY", "SELL"):
+        return None
+    if result.get("reject_reasons"):
+        return None
+
+    # Runtime mode check — only OBSERVE/SHADOW allowed (Phase 39)
+    runtime_mode = _get_runtime_mode()
+    if runtime_mode not in ("observe", "shadow", "paper"):
+        log_info("AutoTrade: execution blocked by runtime mode", mode=runtime_mode, symbol=symbol)
+        return None
+
+    # Kill switch check
+    if _kill_switch:
+        try:
+            ks_status = _kill_switch.get_status()
+            if ks_status.get("active", False):
+                log_info("AutoTrade: execution blocked by kill switch", symbol=symbol)
+                return None
+        except Exception:
+            pass
+
+    direction = result["direction"]
+    market_price = ai_snap.get("market_snapshot", {}).get("close") or ai_snap.get("market_snapshot", {}).get("last_price", 0)
+    if not market_price or market_price <= 0:
+        log_info("AutoTrade: no market price for execution", symbol=symbol)
+        return None
+
+    # Build an AIDecision from the scoring snapshot
+    try:
+        decision = AIDecision(
+            symbol=symbol,
+            direction=direction,
+            score=ai_snap.get("score", 0),
+            confidence=ai_snap.get("confidence", 0),
+            decision=direction,
+            market_snapshot=ai_snap.get("market_snapshot", {}),
+            data_freshness=result.get("freshness_status", "live"),
+            trace_id=ai_snap.get("trace_id", ""),
+            decision_id=ai_snap.get("decision_id", ""),
+        )
+    except Exception as e:
+        log_warn("AutoTrade: failed to build AIDecision", symbol=symbol, error=str(e))
+        return None
+
+    # Build TradePlan via TradePlanner
+    planner = _planner
+    if not planner:
+        log_warn("AutoTrade: TradePlanner not available", symbol=symbol)
+        return None
+
+    try:
+        snap = _snap_kwargs(ai_snap)
+        plan = planner.build_plan(
+            decision=decision,
+            price=market_price,
+            context_snap=snap.get("context_snap"),
+            indicator_snap=snap.get("indicator_snap"),
+            structure_snap=snap.get("structure_snap"),
+            mtf_snap=snap.get("mtf_snap"),
+            sr_snap=snap.get("sr_snap"),
+        )
+    except Exception as e:
+        log_warn("AutoTrade: TradePlanner.build_plan failed", symbol=symbol, error=str(e))
+        return None
+
+    if not plan.qualified:
+        log_info("AutoTrade: trade plan not qualified",
+                 symbol=symbol, reason=plan.rejection_reason)
+        return None
+
+    if plan.risk_status == "blocked":
+        log_info("AutoTrade: trade plan blocked by risk",
+                 symbol=symbol, reason=plan.risk_block_reason)
+        return None
+
+    # Execute via ExecutionGateway (paper mode)
+    if _exec_gateway:
+        try:
+            record = _exec_gateway.execute(
+                symbol=symbol,
+                side=direction,
+                quantity=plan.position_size,
+                price=plan.entry_price,
+                stop_loss=plan.stop_price,
+                target=plan.target_price,
+                trade_plan_id=plan.plan_id,
+                trace_id=plan.trace_id,
+                idempotency_key=f"auto_{symbol}_{plan.plan_id}",
+            )
+            log_info("AutoTrade: execution submitted via gateway",
+                     symbol=symbol, side=direction, qty=plan.position_size,
+                     status=record.status.value if record.status else "unknown")
+            return record.to_dict()
+        except Exception as e:
+            log_warn("AutoTrade: ExecutionGateway.execute failed", symbol=symbol, error=str(e))
+
+    # Fallback: execute via PaperBroker directly
+    if _paper_broker:
+        try:
+            result = _paper_broker.execute(
+                symbol=symbol,
+                side=direction,
+                quantity=plan.position_size,
+                price=plan.entry_price,
+                stop_loss=plan.stop_price,
+                target=plan.target_price,
+                trade_plan_id=plan.plan_id,
+                trace_id=plan.trace_id,
+            )
+            log_info("AutoTrade: execution submitted via PaperBroker",
+                     symbol=symbol, side=direction, qty=plan.position_size,
+                     success=result.get("success", False))
+            return result
+        except Exception as e:
+            log_warn("AutoTrade: PaperBroker.execute failed", symbol=symbol, error=str(e))
+
+    log_warn("AutoTrade: no execution path available", symbol=symbol)
+    return None
 
 
 def _snap_kwargs(snap: dict | None) -> dict:

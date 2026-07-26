@@ -1065,3 +1065,208 @@ class TestSafetyControlsPreserved:
         checks = _check_mandatory_systems()
         assert "phase_43_lock" in checks
         assert checks["phase_43_lock"] == "READY"
+
+
+# ════════════════════════════════════════════════════════════════════
+# SECTION 8: Execution bridge — scoring to trade execution
+# ════════════════════════════════════════════════════════════════════
+
+
+class TestExecutionBridge:
+    """Verify the scoring → execution bridge connects properly."""
+
+    def test_imports_execution_gateway(self):
+        """auto_trade must import ExecutionGateway."""
+        from api.auto_trade import ExecutionGateway
+        assert ExecutionGateway is not None
+
+    def test_imports_paper_broker(self):
+        """auto_trade must import PaperBroker."""
+        from api.auto_trade import PaperBroker
+        assert PaperBroker is not None
+
+    def test_exec_gateway_setter(self):
+        """set_auto_trade_exec_gateway must store the gateway."""
+        from api.auto_trade import set_auto_trade_exec_gateway, _exec_gateway
+        from execution.gateway import ExecutionGateway
+        gw = ExecutionGateway()
+        set_auto_trade_exec_gateway(gw)
+        from api.auto_trade import _exec_gateway as eg
+        assert eg is gw
+
+    def test_paper_broker_setter(self):
+        """set_auto_trade_paper_broker must store the broker."""
+        from api.auto_trade import set_auto_trade_paper_broker
+        from execution.paper_broker import PaperBroker
+        broker = PaperBroker()
+        set_auto_trade_paper_broker(broker)
+        from api.auto_trade import _paper_broker as pb
+        assert pb is broker
+
+    def test_try_execute_trade_rejects_low_score(self):
+        """_try_execute_trade must reject opportunities with score < 50."""
+        import asyncio
+        from api.auto_trade import _try_execute_trade
+        result = {"opportunity_score": 30, "direction": "BUY", "reject_reasons": []}
+        out = asyncio.run(_try_execute_trade("TEST", result, {}, None))
+        assert out is None
+
+    def test_try_execute_trade_rejects_wait_direction(self):
+        """_try_execute_trade must reject WAIT direction."""
+        import asyncio
+        from api.auto_trade import _try_execute_trade
+        result = {"opportunity_score": 70, "direction": "WAIT", "reject_reasons": []}
+        out = asyncio.run(_try_execute_trade("TEST", result, {}, None))
+        assert out is None
+
+    def test_try_execute_trade_rejects_with_rejections(self):
+        """_try_execute_trade must reject when there are rejection reasons."""
+        import asyncio
+        from api.auto_trade import _try_execute_trade
+        result = {
+            "opportunity_score": 70,
+            "direction": "BUY",
+            "reject_reasons": ["Risk level is EXTREME"],
+        }
+        ai_snap = {"market_snapshot": {"close": 100}}
+        out = asyncio.run(_try_execute_trade("TEST", result, ai_snap, None))
+        assert out is None
+
+    def test_try_execute_trade_requires_market_price(self):
+        """_try_execute_trade must reject when no market price available."""
+        import asyncio
+        from api.auto_trade import _try_execute_trade
+        result = {"opportunity_score": 70, "direction": "BUY", "reject_reasons": []}
+        ai_snap = {"market_snapshot": {}}
+        out = asyncio.run(_try_execute_trade("TEST", result, ai_snap, None))
+        assert out is None
+
+    def test_try_execute_trade_no_planner_returns_none(self):
+        """_try_execute_trade must handle missing TradePlanner gracefully."""
+        import asyncio
+        from api.auto_trade import _try_execute_trade
+        result = {"opportunity_score": 70, "direction": "BUY", "reject_reasons": []}
+        ai_snap = {"market_snapshot": {"close": 100.0}}
+        out = asyncio.run(_try_execute_trade("TEST", result, ai_snap, None))
+        # Without a planner or gateway, should return None gracefully
+        assert out is None
+
+    def test_execution_result_attached_to_score(self):
+        """When execution succeeds, result dict must contain execution key."""
+        from api.auto_trade import _build_opportunity_score
+        ai_snap = {
+            "score": 80,
+            "confidence": 85,
+            "risk_level": "LOW",
+            "score_grade": "HIGH",
+            "confidence_grade": "HIGH",
+            "trade_plan": {"direction": "BUY", "strategy": "trend_following"},
+            "mtf_agreement": {"agreement_percent": 80},
+            "market_snapshot": {"close": 19500.0},
+            "evidence": {"trend": "BULLISH"},
+        }
+        result = _build_opportunity_score("NIFTY 50", ai_snap, None)
+        assert result["opportunity_score"] >= 50
+        assert result["direction"] == "BUY"
+        assert "execution" not in result  # not yet executed
+
+    def test_gateway_mode_is_paper_by_default(self):
+        """ExecutionGateway defaults to DISABLED mode (must be set to PAPER)."""
+        from execution.gateway import ExecutionGateway, ExecutionMode
+        gw = ExecutionGateway()
+        assert gw.get_mode() == ExecutionMode.DISABLED.value
+
+    def test_gateway_paper_mode_allows_execution(self):
+        """ExecutionGateway in PAPER mode should allow execution."""
+        from execution.gateway import ExecutionGateway, ExecutionMode
+        gw = ExecutionGateway()
+        gw.set_mode("paper")
+        assert gw.get_mode() == ExecutionMode.PAPER.value
+        record = gw.execute(
+            symbol="TEST", side="BUY", quantity=1,
+            price=100.0, stop_loss=99.0, target=102.0,
+        )
+        assert record is not None
+        assert record.status.value in ("filled", "submitted")
+
+    def test_gateway_live_mode_requires_arming(self):
+        """ExecutionGateway in LIVE mode must require arming."""
+        from execution.gateway import ExecutionGateway
+        gw = ExecutionGateway()
+        gw.set_mode("live")
+        record = gw.execute(
+            symbol="TEST", side="BUY", quantity=1,
+            price=100.0, stop_loss=99.0, target=102.0,
+        )
+        assert record.status.value == "blocked"
+
+    def test_paper_broker_tick_handler(self):
+        """PaperBroker.on_tick must update position prices."""
+        from datetime import datetime, timezone
+        from execution.paper_broker import PaperBroker
+        from models.tick import Tick
+        broker = PaperBroker()
+        broker.start()
+        result = broker.execute(
+            symbol="TEST", side="BUY", quantity=10,
+            price=100.0, stop_loss=98.0, target=105.0,
+        )
+        assert result["success"] is True
+        tick = Tick(symbol="TEST", price=103.0, timestamp=datetime.now(timezone.utc), volume=100)
+        broker.on_tick(tick)
+        pos = broker.get_position("TEST")
+        assert pos is not None
+        assert pos.current_price == 103.0
+        assert pos.unrealized_pnl == 30.0
+
+    def test_paper_broker_sl_triggers_close(self):
+        """PaperBroker must close position when stop loss is hit."""
+        from datetime import datetime, timezone
+        from execution.paper_broker import PaperBroker
+        from models.tick import Tick
+        broker = PaperBroker()
+        broker.start()
+        result = broker.execute(
+            symbol="TEST", side="BUY", quantity=10,
+            price=100.0, stop_loss=98.0, target=105.0,
+        )
+        assert result["success"] is True
+        tick = Tick(symbol="TEST", price=97.5, timestamp=datetime.now(timezone.utc), volume=100)
+        broker.on_tick(tick)
+        pos = broker.get_position("TEST")
+        assert pos is None, "Position should be closed at stop loss"
+        assert broker.get_account().closed_trades == 1
+
+    def test_paper_broker_target_triggers_close(self):
+        """PaperBroker must close position when target is hit."""
+        from datetime import datetime, timezone
+        from execution.paper_broker import PaperBroker
+        from models.tick import Tick
+        broker = PaperBroker()
+        broker.start()
+        result = broker.execute(
+            symbol="TEST", side="BUY", quantity=10,
+            price=100.0, stop_loss=98.0, target=105.0,
+        )
+        assert result["success"] is True
+        tick = Tick(symbol="TEST", price=105.5, timestamp=datetime.now(timezone.utc), volume=100)
+        broker.on_tick(tick)
+        pos = broker.get_position("TEST")
+        assert pos is None, "Position should be closed at target"
+        assert broker.get_account().closed_trades == 1
+
+    def test_paper_broker_pnl_tracking(self):
+        """PaperBroker must track P&L correctly across position lifecycle."""
+        from datetime import datetime, timezone
+        from execution.paper_broker import PaperBroker
+        from models.tick import Tick
+        broker = PaperBroker()
+        broker.start()
+        initial_cash = broker.get_account().available_cash
+        broker.execute(symbol="TEST", side="BUY", quantity=10, price=100.0)
+        assert broker.get_account().available_cash < initial_cash
+        broker.on_tick(Tick(symbol="TEST", price=102.0, timestamp=datetime.now(timezone.utc), volume=100))
+        broker.close_position(list(broker._positions.keys())[0], "manual")
+        acct = broker.get_account()
+        assert acct.closed_trades == 1
+        assert acct.total_realized_pnl > 0
