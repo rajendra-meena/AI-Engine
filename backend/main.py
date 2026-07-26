@@ -58,6 +58,24 @@ from api.runtime import router as runtime_router
 from api.backtest_validation import router as backtest_validation_router
 from api.kite import router as kite_router, set_provider_factory, set_kite_risk_engine
 from api.live_activation import router as live_activation_router, set_activation_gate, set_live_execution_gate
+from api.ai_performance import router as ai_performance_router
+from api.market_regime import router as regime_router, set_regime_engine
+from market_regime.engine import RegimeEngine
+from api.model_registry import router as model_registry_router
+from api.certification import router as certification_router
+from api.auto_trade import (
+    router as auto_trade_router,
+    set_auto_trade_ai_engine,
+    set_auto_trade_regime_engine,
+    set_auto_trade_risk_engine,
+    set_auto_trade_planner,
+    set_auto_trade_kill_switch,
+    set_auto_trade_audit_log,
+    set_auto_trade_market_service,
+    set_auto_trade_event_bus,
+    set_auto_trade_runtime_mgr,
+    set_auto_trade_zerodha_engine,
+)
 from services.prediction_service import initialize as init_prediction_service
 from services.live_market_engine import LiveMarketDataEngine
 from websocket.gateway import WebSocketGateway
@@ -84,6 +102,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 event_bus = EventBus(max_queue_size=1000)
 live_engine: LiveMarketDataEngine | None = None
+regime_engine: RegimeEngine | None = None
 websocket_gateway: WebSocketGateway | None = None
 replay_engine: ReplayEngine | None = None
 tick_engine: TickEngine | None = None
@@ -208,6 +227,11 @@ async def lifespan(app: FastAPI):
     set_sr_engine(sr_engine)
     await sr_engine.start()
 
+    # Initialize the Market Regime Engine (no EventBus — pulled by AutoTrade)
+    from market_regime.engine import RegimeEngine as _RegimeEngine
+
+    regime_engine = _RegimeEngine()
+
     # Start the AI Decision Engine (capstone)
     ai_decision_engine = AIDecisionEngine(event_bus)
     set_ai_decision_engine(ai_decision_engine)
@@ -299,6 +323,102 @@ async def lifespan(app: FastAPI):
     set_mtf_engine(mtf_engine)
     await mtf_engine.start()
 
+    # Wire Auto-Trade Workspace to existing engines
+    set_auto_trade_ai_engine(ai_decision_engine)
+    set_auto_trade_regime_engine(regime_engine)
+    set_auto_trade_risk_engine(risk_engine)
+    set_auto_trade_planner(trade_planner)
+    set_auto_trade_kill_switch(ks if 'ks' in dir() else None)
+    set_auto_trade_audit_log(al if 'al' in dir() else None)
+    set_auto_trade_market_service(market_service)
+    set_auto_trade_event_bus(event_bus)
+    set_auto_trade_runtime_mgr(rm if 'rm' in dir() else None)
+
+    # Initialize the Zerodha Market Data Engine (Auto Trade data source)
+    from services.zerodha_market_data_engine import ZerodhaMarketDataEngine
+    from providers.zerodha.kite_provider import KiteProvider
+
+    zerodha_kite = None
+    try:
+        zerodha_kite = provider_factory.get_provider("zerodha")
+    except Exception as e:
+        log_warn("Zerodha Kite provider not available", error=str(e))
+
+    zerodha_engine = ZerodhaMarketDataEngine(
+        event_bus=event_bus,
+        kite_provider=zerodha_kite if isinstance(zerodha_kite, KiteProvider) else None,
+    )
+    set_auto_trade_zerodha_engine(zerodha_engine)
+    service_locator.zerodha_engine = zerodha_engine  # type: ignore[attr-defined]
+
+    # Initialize the Historical Warmup Engine
+    from services.historical_warmup import HistoricalWarmupEngine
+
+    warmup_engine = HistoricalWarmupEngine(
+        kite_provider=zerodha_kite if isinstance(zerodha_kite, KiteProvider) else None,
+    )
+
+    # Wire warmup engine into Zerodha engine (Fix #1)
+    zerodha_engine.set_warmup_engine(warmup_engine)
+
+    # Define the warmup-feed callback: feeds Kite historical candles into all
+    # downstream engines via EventBus for a single canonical pipeline.
+    # Every warmup event carries is_warmup=true, allow_signal_generation=false
+    # to suppress AI decision generation during warmup.
+    async def _feed_warmup_candles(warmup_results: dict):
+        """Feed warmup candles via EventBus to prime indicators, not generate signals."""
+        from core.event_model import Event as BusEvent
+
+        for symbol, intervals in warmup_results.items():
+            for interval in intervals:
+                candles = warmup_engine.get_candles(symbol, interval)
+                if not candles:
+                    continue
+                for wc in candles:
+                    # Build candle payload with signal suppression flags
+                    candle_data = {
+                        "symbol": symbol,
+                        "interval": interval,
+                        "time": wc.time,
+                        "open": wc.open,
+                        "high": wc.high,
+                        "low": wc.low,
+                        "close": wc.close,
+                        "volume": wc.volume,
+                        "is_closed": True,
+                    }
+                    candle_payload = {
+                        "symbol": symbol,
+                        "interval": interval,
+                        "is_warmup": True,
+                        "allow_signal_generation": False,
+                        "source_provider": "ZERODHA_KITE",
+                        "candle_version": f"warmup_{wc.time}",
+                        "idempotency_key": f"warmup_{symbol}_{interval}_{wc.time}",
+                        "candle": candle_data,
+                    }
+                    # Publish via EventBus — one canonical pipeline.
+                    # This triggers IndicatorEngine (via CANDLE_CLOSED subscription),
+                    # which publishes INDICATORS_UPDATED → MarketStructureEngine →
+                    # TradingContextEngine → SREngine naturally.
+                    ev = BusEvent(
+                        type="candle_closed", source="warmup", payload=candle_payload
+                    )
+                    await event_bus.publish(ev)
+
+                log_info("Warmup candles fed via EventBus",
+                         symbol=symbol, interval=interval, count=len(candles))
+
+    zerodha_engine.set_warmup_feed_callback(_feed_warmup_candles)
+
+    # Wire tick callback from Zerodha engine to TickEngine
+    zerodha_engine.set_tick_callback(
+        lambda tick: asyncio.ensure_future(tick_engine.publish_tick(tick))
+    )
+
+    # Wire Zerodha engine into LiveExecutionGate for stale-data checks
+    live_exec_gate.set_zerodha_engine(zerodha_engine)
+
     # Start the Live Market Data Engine
     live_engine = LiveMarketDataEngine(event_bus, market_service)
     service_locator.live_engine = live_engine
@@ -322,78 +442,82 @@ async def lifespan(app: FastAPI):
     service_locator.replay_engine = replay_engine
     set_replay_engine(replay_engine)
 
-    # Seed engines with recent candle data so they produce initial snapshots
-    # for every canonical symbol (prevents 404 on first API call).
-    # Note: we feed engines directly rather than via Event Bus to ensure
-    # synchronous processing before the first API request arrives.
-    for seed_symbol in list_canonical_names():
-        try:
-            data = await market_service.get_intraday(seed_symbol, "15m", 5)
-            seed_candles = data.get("candles", [])
-            if seed_candles:
-                from core.event_model import Event as BusEvent
+    # Seed engines as fallback ONLY if Kite warmup engine is unavailable.
+    # For Auto Trade this must NOT happen — Yahoo data is never used for
+    # live signal generation. This block is preserved only for legacy
+    # research/backtest API endpoints that need *some* seed data.
+    # When Kite is available, the warmup callback handles all seeding.
+    if not warmup_engine.is_kite_available():
+        log_warn("Kite warmup unavailable — seeding from Yahoo for legacy endpoints only. "
+                 "Auto Trade indicators will NOT be primed.")
+        for seed_symbol in list_canonical_names():
+            try:
+                data = await market_service.get_intraday(seed_symbol, "15m", 5)
+                seed_candles = data.get("candles", [])
+                if seed_candles:
+                    from core.event_model import Event as BusEvent
 
-                for sc in seed_candles:
-                    candle_payload = {
-                        "symbol": seed_symbol,
-                        "interval": "15m",
-                        "candle": {
+                    for sc in seed_candles:
+                        candle_payload = {
                             "symbol": seed_symbol,
                             "interval": "15m",
-                            "time": sc.get("time", ""),
-                            "open": sc.get("open", 0),
-                            "high": sc.get("high", 0),
-                            "low": sc.get("low", 0),
-                            "close": sc.get("close", 0),
-                            "volume": sc.get("volume", 0),
-                            "is_closed": True,
-                        },
-                    }
-                    ev = BusEvent(
-                        type="candle_closed", source="bootstrap", payload=candle_payload
-                    )
-                    if indicator_engine and indicator_engine._running:
-                        await indicator_engine._on_candle_closed(ev)
-                    if market_structure_engine and market_structure_engine._running:
-                        await market_structure_engine._on_candle_closed(ev)
-                    if pattern_engine and pattern_engine._running:
-                        await pattern_engine._on_candle_closed(ev)
-
-                # Feed SR engine with latest results from the 3 upstream engines
-                if sr_engine and sr_engine._running:
-                    ind_snap = (
-                        indicator_engine.latest_snapshot(seed_symbol, "15m")
-                        if indicator_engine
-                        else None
-                    )
-                    struct_snap = (
-                        market_structure_engine.latest_snapshot(seed_symbol, "15m")
-                        if market_structure_engine
-                        else None
-                    )
-                    if ind_snap:
-                        payload = {"symbol": seed_symbol, **ind_snap}
-                        await sr_engine._on_indicator(
-                            BusEvent(
-                                type="indicators_updated",
-                                source="bootstrap",
-                                payload=payload,
-                            )
+                            "candle": {
+                                "symbol": seed_symbol,
+                                "interval": "15m",
+                                "time": sc.get("time", ""),
+                                "open": sc.get("open", 0),
+                                "high": sc.get("high", 0),
+                                "low": sc.get("low", 0),
+                                "close": sc.get("close", 0),
+                                "volume": sc.get("volume", 0),
+                                "is_closed": True,
+                            },
+                        }
+                        ev = BusEvent(
+                            type="candle_closed", source="bootstrap", payload=candle_payload
                         )
-                    if struct_snap:
-                        payload = {"symbol": seed_symbol, **struct_snap}
-                        await sr_engine._on_structure(
-                            BusEvent(
-                                type="structure_updated",
-                                source="bootstrap",
-                                payload=payload,
-                            )
-                        )
-                    await sr_engine._on_candle(ev)
+                        if indicator_engine and indicator_engine._running:
+                            await indicator_engine._on_candle_closed(ev)
+                        if market_structure_engine and market_structure_engine._running:
+                            await market_structure_engine._on_candle_closed(ev)
+                        if pattern_engine and pattern_engine._running:
+                            await pattern_engine._on_candle_closed(ev)
 
-                log_info("Engines seeded", symbol=seed_symbol, count=len(seed_candles))
-        except Exception as e:
-            log_warn("Engine seeding skipped", error=str(e))
+                    # Feed SR engine with latest results from the 3 upstream engines
+                    if sr_engine and sr_engine._running:
+                        ind_snap = (
+                            indicator_engine.latest_snapshot(seed_symbol, "15m")
+                            if indicator_engine
+                            else None
+                        )
+                        struct_snap = (
+                            market_structure_engine.latest_snapshot(seed_symbol, "15m")
+                            if market_structure_engine
+                            else None
+                        )
+                        if ind_snap:
+                            payload = {"symbol": seed_symbol, **ind_snap}
+                            await sr_engine._on_indicator(
+                                BusEvent(
+                                    type="indicators_updated",
+                                    source="bootstrap",
+                                    payload=payload,
+                                )
+                            )
+                        if struct_snap:
+                            payload = {"symbol": seed_symbol, **struct_snap}
+                            await sr_engine._on_structure(
+                                BusEvent(
+                                    type="structure_updated",
+                                    source="bootstrap",
+                                    payload=payload,
+                                )
+                            )
+                        await sr_engine._on_candle(ev)
+
+                    log_info("Engines seeded", symbol=seed_symbol, count=len(seed_candles))
+            except Exception as e:
+                log_warn("Engine seeding skipped", error=str(e))
 
     yield  # Application runs here
 
@@ -485,6 +609,11 @@ app.include_router(trades_router)
 app.include_router(live_router)
 app.include_router(market_stream_router)
 app.include_router(live_activation_router)
+app.include_router(ai_performance_router)
+app.include_router(regime_router)
+app.include_router(model_registry_router)
+app.include_router(certification_router)
+app.include_router(auto_trade_router)
 
 
 # ── WebSocket endpoint ──

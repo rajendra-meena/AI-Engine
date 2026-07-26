@@ -47,9 +47,9 @@ export function LiveControlCenter() {
   }, [])
 
   useEffect(() => {
-    fetchAll()
+    const t = setTimeout(() => fetchAll(), 0)
     const interval = setInterval(fetchAll, 10000)
-    return () => clearInterval(interval)
+    return () => { clearTimeout(t); clearInterval(interval) }
   }, [fetchAll])
 
   const tabs = [

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from services.live_market_engine import LiveMarketDataEngine
+    from services.zerodha_market_data_engine import ZerodhaMarketDataEngine
     from stream.router import StreamRouter
     from tick.engine import TickEngine
     from websocket.gateway import WebSocketGateway
@@ -22,6 +23,7 @@ if TYPE_CHECKING:
 # ── Global references (set by main.py during lifespan) ──
 
 live_engine: LiveMarketDataEngine | None = None
+zerodha_engine: ZerodhaMarketDataEngine | None = None
 stream_router: StreamRouter | None = None
 tick_engine: TickEngine | None = None
 websocket_gateway: WebSocketGateway | None = None
@@ -36,6 +38,11 @@ def ensure_gateway() -> WebSocketGateway:
 def ensure_live_engine() -> LiveMarketDataEngine:
     assert live_engine is not None, "Live engine not initialized"
     return live_engine
+
+
+def ensure_zerodha_engine() -> ZerodhaMarketDataEngine:
+    assert zerodha_engine is not None, "Zerodha market data engine not initialized"
+    return zerodha_engine
 
 
 def ensure_stream_router() -> StreamRouter:

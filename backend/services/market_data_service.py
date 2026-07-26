@@ -105,6 +105,24 @@ class MarketDataService:
             )
         return self._provider
 
+    def set_provider(self, name: str):
+        """
+        Override the active provider by name.
+        Useful for switching the data source per-context (e.g. Auto Trade
+        must use Zerodha Kite exclusively).
+        """
+        provider = self._factory.get_provider(name)
+        self._provider = provider
+        log_info("MarketDataService: provider set", name=name)
+
+    def get_auto_trade_provider(self) -> BaseProvider:
+        """
+        Get the Zerodha Kite provider for Auto Trade.
+        This is the ONLY provider used by the Auto Trade pipeline.
+        Yahoo Finance is never used as an Auto Trade fallback.
+        """
+        return self._factory.get_auto_trade_provider()
+
     async def provider_status(self) -> dict[str, Any]:
         """Return the current provider's health and capabilities (memory cached)."""
         cache_key = provider_status_key()

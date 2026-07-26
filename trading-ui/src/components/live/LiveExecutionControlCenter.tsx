@@ -52,9 +52,9 @@ export function LiveExecutionControlCenter() {
   }, [])
 
   useEffect(() => {
-    fetchAll()
+    const t = setTimeout(() => fetchAll(), 0)
     const interval = setInterval(fetchAll, 15000)
-    return () => clearInterval(interval)
+    return () => { clearTimeout(t); clearInterval(interval) }
   }, [fetchAll])
 
   const handleAction = async (action: string, fn: () => Promise<any>) => {
@@ -79,37 +79,6 @@ export function LiveExecutionControlCenter() {
     { id: "safety" as TabId, label: "Safety", icon: <Shield className="w-3.5 h-3.5" /> },
     { id: "audit" as TabId, label: "Audit", icon: <Clock className="w-3.5 h-3.5" /> },
   ]
-
-  const ConfirmationDialog = ({ action, onConfirm, onCancel }: {
-    action: string; onConfirm: () => void; onCancel: () => void
-  }) => (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="rounded-lg border bg-card p-6 max-w-md mx-4 shadow-xl">
-        <div className="flex items-center gap-2 mb-3">
-          {action === "kill_switch" || action === "emergency_cancel" ? (
-            <Siren className="w-5 h-5 text-red-500" />
-          ) : (
-            <AlertTriangle className="w-5 h-5 text-amber-500" />
-          )}
-          <h3 className="text-sm font-bold">{action.replace(/_/g, " ").toUpperCase()}</h3>
-        </div>
-        <p className="text-[10px] text-muted-foreground mb-4">
-          {action === "canary_arm" && "This will arm canary mode. Real broker orders may be placed within strict limits."}
-          {action === "emergency_cancel" && "This will CANCEL ALL OPEN ORDERS and block new entries. Requires explicit recovery."}
-        </p>
-        <div className="flex gap-2 justify-end">
-          <button onClick={onCancel}
-            className="px-3 py-1.5 rounded text-[10px] font-medium border bg-card hover:bg-accent">
-            Cancel
-          </button>
-          <button onClick={onConfirm}
-            className={`px-3 py-1.5 rounded text-[10px] font-medium text-white bg-red-600 hover:bg-red-700`}>
-            Confirm {action.replace(/_/g, " ")}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
 
   return (
     <div className="space-y-4">
@@ -483,4 +452,37 @@ function MetricCard({ label, value, color }: { label: string; value: string; col
     <div className="text-[9px] text-muted-foreground uppercase tracking-wider">{label}</div>
     <div className={`text-lg font-bold font-mono mt-0.5 ${color || ""}`}>{value}</div>
   </div>
+}
+
+function ConfirmationDialog({ action, onConfirm, onCancel }: {
+  action: string; onConfirm: () => void; onCancel: () => void
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="rounded-lg border bg-card p-6 max-w-md mx-4 shadow-xl">
+        <div className="flex items-center gap-2 mb-3">
+          {action === "kill_switch" || action === "emergency_cancel" ? (
+            <Siren className="w-5 h-5 text-red-500" />
+          ) : (
+            <AlertTriangle className="w-5 h-5 text-amber-500" />
+          )}
+          <h3 className="text-sm font-bold">{action.replace(/_/g, " ").toUpperCase()}</h3>
+        </div>
+        <p className="text-[10px] text-muted-foreground mb-4">
+          {action === "canary_arm" && "This will arm canary mode. Real broker orders may be placed within strict limits."}
+          {action === "emergency_cancel" && "This will CANCEL ALL OPEN ORDERS and block new entries. Requires explicit recovery."}
+        </p>
+        <div className="flex gap-2 justify-end">
+          <button onClick={onCancel}
+            className="px-3 py-1.5 rounded text-[10px] font-medium border bg-card hover:bg-accent">
+            Cancel
+          </button>
+          <button onClick={onConfirm}
+            className="px-3 py-1.5 rounded text-[10px] font-medium text-white bg-red-600 hover:bg-red-700">
+            Confirm {action.replace(/_/g, " ")}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }

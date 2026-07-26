@@ -34,8 +34,6 @@ export function LearningDashboard() {
   const [error, setError] = useState<string | null>(null)
 
   const fetchAll = useCallback(async () => {
-    setLoading(true)
-    setError(null)
     try {
       const d = await learningService.getDashboard()
       setData(d)
@@ -46,9 +44,9 @@ export function LearningDashboard() {
   }, [])
 
   useEffect(() => {
-    fetchAll()
+    const t = setTimeout(() => fetchAll(), 0)
     const interval = setInterval(fetchAll, 30000)
-    return () => clearInterval(interval)
+    return () => { clearTimeout(t); clearInterval(interval) }
   }, [fetchAll])
 
   const tabs: { id: TabId; label: string; icon: React.ReactNode }[] = [
@@ -433,8 +431,10 @@ function RecommendationsTab() {
   const [refresh, setRefresh] = useState(0)
 
   useEffect(() => {
-    setLoading(true)
-    learningService.getRecommendations(filter).then(d => setRecs(d.recommendations || [])).catch(() => {}).finally(() => setLoading(false))
+    const t = setTimeout(() => {
+      learningService.getRecommendations(filter).then(d => setRecs(d.recommendations || [])).catch(() => {}).finally(() => setLoading(false))
+    }, 0)
+    return () => clearTimeout(t)
   }, [filter, refresh])
 
   const handleApprove = async (id: string) => {

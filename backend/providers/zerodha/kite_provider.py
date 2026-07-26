@@ -66,6 +66,13 @@ class KiteProvider(BaseProvider):
         self.orders = OrderManager()
         self.ws_client: KiteWebSocketClient | None = None
 
+        # Restore persisted token from file if not already authenticated
+        # (env var KITE_ACCESS_TOKEN takes priority; file is fallback)
+        if not self.auth.is_authenticated:
+            stored = self.token_manager.load_token_from_file()
+            if stored:
+                self.auth.restore_token(stored, self.token_manager.user_id)
+
         # Token-to-symbol mapping (set during instrument loading)
         self._token_map: dict[int, str] = {}
 

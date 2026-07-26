@@ -10,6 +10,11 @@ Usage:
     zerodha = factory.get_provider("zerodha")
     # or get the default:
     provider = factory.get_default_provider()
+
+Auto Trade provider selection:
+    The Auto Trade pipeline must use Zerodha Kite exclusively.
+    Use get_auto_trade_provider() to obtain it.
+    Yahoo Finance is blocked as an Auto Trade fallback.
 """
 
 from data.base_provider import BaseProvider
@@ -65,6 +70,19 @@ class ProviderFactory:
 
     def get_active_provider_name(self) -> str:
         return self._active_provider
+
+    def get_auto_trade_provider(self) -> BaseProvider:
+        """
+        Get the provider for the Auto Trade pipeline.
+
+        Returns the Zerodha Kite provider instance.
+        This is the ONLY provider used by Auto Trade.
+        Yahoo Finance is never a fallback for Auto Trade.
+
+        Raises:
+            ProviderUnavailable: If the Zerodha provider cannot be created.
+        """
+        return self.get_provider("zerodha")
 
     def list_available_providers(self) -> list[str]:
         """Return a list of provider names that can be created."""

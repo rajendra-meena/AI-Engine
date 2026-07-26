@@ -25,7 +25,6 @@ export function ExecutionControlCenter() {
   const [error, setError] = useState<string | null>(null)
 
   const fetchAll = useCallback(async () => {
-    setError(null)
     try {
       const [s, h, r, pr, a, o, ch] = await Promise.all([
         executionService.getStatus().catch(() => null),
@@ -50,9 +49,9 @@ export function ExecutionControlCenter() {
   }, [])
 
   useEffect(() => {
-    fetchAll()
+    const t = setTimeout(() => fetchAll(), 0)
     const interval = setInterval(fetchAll, 10000)
-    return () => clearInterval(interval)
+    return () => { clearTimeout(t); clearInterval(interval) }
   }, [fetchAll])
 
   const handleSimulate = async () => {

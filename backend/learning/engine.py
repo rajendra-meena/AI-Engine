@@ -231,7 +231,7 @@ def get_performance_metrics() -> dict[str, Any]:
         "accuracy": round(correct_c / evaluated_c * 100, 1) if evaluated_c > 0 else 0,
         "average_confidence": round(dict(avg_conf)["c"] or 0, 1),
         "average_return": round(dict(avg_return)["c"] or 0, 2),
-        "win_rate": round(dict(win_rate)["c"] / dict(total_trades)["c"] * 100, 1) if dict(total_trades)["c"] > 0 else 0,
+        "win_rate": round(dict(win_rate)["c"] / max(1, dict(total_trades)["c"]) * 100, 1),
         "total_trades": dict(total_trades)["c"],
         "blocked_trades": dict(blocked)["c"],
     }

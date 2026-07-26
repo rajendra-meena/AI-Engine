@@ -25,6 +25,9 @@ class MTFSnapshot:
 
     warnings: list[str] | None = None
 
+    trigger_candle_version: str = ""
+    analysis_cycle_id: str = ""
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "symbol": self.symbol,
@@ -38,4 +41,6 @@ class MTFSnapshot:
             "trading_permission": self.trading_permission,
             "overall_confidence": self.overall_confidence,
             "warnings": self.warnings or [],
+            "candle_version": self.trigger_candle_version,
+            "analysis_cycle_id": self.analysis_cycle_id,
         }

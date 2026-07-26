@@ -240,12 +240,12 @@ class InstrumentManager:
         Map an internal display name (e.g. 'NIFTY 50') to a Kite trading symbol.
 
         Returns:
-            Kite trading symbol (e.g. 'NIFTY') or None if not found.
+            Kite trading symbol or None if not found.
         """
         mapping = {
-            "NIFTY 50": "NIFTY",
-            "BANKNIFTY": "BANKNIFTY",
-            "BANK NIFTY": "BANKNIFTY",
+            "NIFTY 50": "NIFTY 50",
+            "BANKNIFTY": "NIFTY BANK",
+            "BANK NIFTY": "NIFTY BANK",
             "SENSEX": "SENSEX",
         }
         return mapping.get(internal_symbol)
@@ -257,16 +257,24 @@ class InstrumentManager:
         Returns:
             Kite instrument token or None if not mapped.
         """
+        # Try direct lookup by Kite symbol first
         kite_symbol = self.map_to_kite_symbol(internal_symbol)
-        if not kite_symbol:
-            return None
-        inst = self.get_by_symbol(kite_symbol, "NSE")
-        if inst:
-            return inst.get("instrument_token")
-        # Try finding by exchange "NFO" for indices
-        for inst in self._instruments:
-            if inst.get("tradingsymbol") == kite_symbol and inst.get("exchange") == "NSE":
+        if kite_symbol:
+            inst = self.get_by_symbol(kite_symbol, "NSE")
+            if inst:
                 return inst.get("instrument_token")
+            # Broader lookup — try any exchange
+            for inst in self._instruments:
+                if inst.get("tradingsymbol") == kite_symbol:
+                    return inst.get("instrument_token")
+
+        # Fallback: search by internal display name directly in instrument master
+        for inst in self._instruments:
+            ts = inst.get("tradingsymbol", "").upper()
+            name = inst.get("name", "").upper()
+            if internal_symbol.upper() in (ts, name):
+                return inst.get("instrument_token")
+
         return None
 
     # ── Status ──

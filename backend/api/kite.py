@@ -527,3 +527,98 @@ async def kite_health():
             "status": "unavailable",
             "error_message": str(e),
         }
+
+
+# ── Zerodha Market Data Engine Status (for Auto Trade) ──
+
+
+@router.get("/api/zerodha/status")
+async def zerodha_status():
+    """Get full Zerodha market data engine status for Auto Trade."""
+    try:
+        from api.auto_trade import _zerodha_engine
+        if _zerodha_engine:
+            return _zerodha_engine.get_status()
+        return {"error": "ZerodhaMarketDataEngine not initialized"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.get("/api/zerodha/subscriptions")
+async def zerodha_subscriptions():
+    """Get current WebSocket subscriptions."""
+    try:
+        from api.auto_trade import _zerodha_engine
+        if _zerodha_engine:
+            s = _zerodha_engine.get_status()
+            ws = s.get("websocket", {})
+            return {
+                "subscribed_tokens": ws.get("subscribed_tokens", 0),
+                "total_ticks": ws.get("ticks_received", 0),
+                "last_tick_at": ws.get("last_tick_time"),
+                "state": s.get("state", "OFF"),
+                "connected": ws.get("connected", False),
+            }
+        return {"error": "ZerodhaMarketDataEngine not initialized"}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.post("/api/zerodha/market-data/connect")
+async def zerodha_market_data_connect():
+    """Connect the Zerodha market data engine."""
+    try:
+        from api.auto_trade import _zerodha_engine
+        if not _zerodha_engine:
+            return {"success": False, "error": "Engine not initialized"}
+        await _zerodha_engine.start()
+        return {"success": True, "status": _zerodha_engine.get_status()}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/api/zerodha/market-data/disconnect")
+async def zerodha_market_data_disconnect():
+    """Disconnect the Zerodha market data engine."""
+    try:
+        from api.auto_trade import _zerodha_engine
+        if not _zerodha_engine:
+            return {"success": False, "error": "Engine not initialized"}
+        await _zerodha_engine.stop()
+        return {"success": True, "message": "Disconnected"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.get("/api/zerodha/data-freshness")
+async def zerodha_data_freshness(symbol: str = ""):
+    """Get per-symbol data freshness status."""
+    try:
+        from api.auto_trade import _zerodha_engine
+        if not _zerodha_engine:
+            return {"error": "Engine not initialized"}
+        if symbol:
+            result = _zerodha_engine.get_data_freshness_status(symbol)
+            if not result:
+                return {"symbol": symbol, "status": "unknown"}
+            return result
+        return {"symbols": _zerodha_engine.get_freshness_detail()}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@router.get("/api/zerodha/instruments/status")
+async def zerodha_instruments_status():
+    """Get instrument master loading status."""
+    try:
+        from api.auto_trade import _zerodha_engine
+        if not _zerodha_engine:
+            return {"loaded": False}
+        s = _zerodha_engine.get_status()
+        return {
+            "loaded": s.get("instruments", {}).get("mapped", 0) > 0,
+            "mapped": s.get("instruments", {}).get("mapped", 0),
+            "subscribed": s.get("instruments", {}).get("subscribed", 0),
+        }
+    except Exception as e:
+        return {"error": str(e)}

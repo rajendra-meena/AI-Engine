@@ -2,26 +2,79 @@
 
 import { useState, useEffect, useCallback } from "react"
 import {
-  Activity, BarChart3, DollarSign, TrendingUp, Shield, RefreshCw,
-  Play, Pause, Square, RotateCcw, XCircle, CheckCircle,
+  Activity, BarChart3, DollarSign, TrendingUp, RefreshCw,
+  Play, Pause, Square, RotateCcw,
 } from "lucide-react"
 import { paperBrokerService } from "@/services/paperBrokerService"
 
 type TabId = "overview" | "positions" | "orders" | "trades" | "events"
 
+interface TradeStatus {
+  running: boolean
+  paused: boolean
+}
+
+interface AccountInfo {
+  equity: number
+  available_cash: number
+  total_pnl: number
+  return_pct: number
+  open_positions: number
+  closed_trades: number
+  win_rate: number
+  used_margin: number
+}
+
+interface Position {
+  trade_id: string
+  symbol: string
+  direction: string
+  quantity: number
+  entry_price: number
+  current_price: number
+  stop_loss: number
+  target: number
+  unrealized_pnl: number
+}
+
+interface Order {
+  id: string
+  symbol: string
+  side: string
+  quantity: number
+  price: number
+  status: string
+}
+
+interface TradeItem {
+  symbol: string
+  direction: string
+  entry_price: number
+  exit_price: number
+  quantity: number
+  realized_pnl: number
+  exit_reason: string
+}
+
+interface EventItem {
+  timestamp: string
+  type: string
+  symbol: string
+  pnl: number
+}
+
 export function PaperTradingDashboard() {
   const [activeTab, setActiveTab] = useState<TabId>("overview")
-  const [status, setStatus] = useState<any>(null)
-  const [account, setAccount] = useState<any>(null)
-  const [positions, setPositions] = useState<any[]>([])
-  const [orders, setOrders] = useState<any[]>([])
-  const [trades, setTrades] = useState<any[]>([])
-  const [events, setEvents] = useState<any[]>([])
+  const [status, setStatus] = useState<TradeStatus | null>(null)
+  const [account, setAccount] = useState<AccountInfo | null>(null)
+  const [positions, setPositions] = useState<Position[]>([])
+  const [orders, setOrders] = useState<Order[]>([])
+  const [trades, setTrades] = useState<TradeItem[]>([])
+  const [events, setEvents] = useState<EventItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const fetchAll = useCallback(async () => {
-    setError(null)
     try {
       const [s, a, p, o, t, e] = await Promise.all([
         paperBrokerService.getStatus().catch(() => null),
@@ -31,6 +84,7 @@ export function PaperTradingDashboard() {
         paperBrokerService.getTrades().catch(() => null),
         paperBrokerService.getEvents().catch(() => null),
       ])
+      setError(null)
       if (s) setStatus(s)
       if (a) setAccount(a)
       if (p) setPositions(p.positions || [])
@@ -42,9 +96,9 @@ export function PaperTradingDashboard() {
   }, [])
 
   useEffect(() => {
-    fetchAll()
+    const t = setTimeout(() => fetchAll(), 0)
     const interval = setInterval(fetchAll, 5000)
-    return () => clearInterval(interval)
+    return () => { clearTimeout(t); clearInterval(interval) }
   }, [fetchAll])
 
   const handleAction = async (action: string) => {
@@ -141,7 +195,7 @@ export function PaperTradingDashboard() {
                   <th className="text-right px-3 py-2">Unrealized P&L</th>
                 </tr></thead>
                 <tbody className="divide-y">
-                  {positions.map((p: any, i: number) => (
+                  {positions.map((p: Position, i: number) => (
                     <tr key={p.trade_id || i} className="hover:bg-muted/20">
                       <td className="px-3 py-1.5 font-medium">{p.symbol}</td>
                       <td className={`px-3 py-1.5 ${p.direction === "LONG" ? "text-emerald-500" : "text-red-500"}`}>{p.direction}</td>
@@ -176,7 +230,7 @@ function MetricCard({ label, value, color }: { label: string; value: string; col
   </div>
 }
 
-function OrdersTab({ orders }: { orders: any[] }) {
+function OrdersTab({ orders }: { orders: Order[] }) {
   if (orders.length === 0) return <div className="p-8 text-center text-[10px] text-muted-foreground">No orders</div>
   return <div className="border rounded-lg overflow-hidden">
     <table className="w-full text-[10px]">
@@ -189,7 +243,7 @@ function OrdersTab({ orders }: { orders: any[] }) {
         <th className="text-left px-3 py-2">Status</th>
       </tr></thead>
       <tbody className="divide-y">
-        {orders.map((o: any, i: number) => (
+        {orders.map((o: Order, i: number) => (
           <tr key={o.id || i} className="hover:bg-muted/20">
             <td className="px-3 py-1.5 font-mono text-muted-foreground text-[9px]">{o.id?.slice(-8)}</td>
             <td className="px-3 py-1.5 font-medium">{o.symbol}</td>
@@ -206,7 +260,7 @@ function OrdersTab({ orders }: { orders: any[] }) {
   </div>
 }
 
-function TradesTab({ trades }: { trades: any[] }) {
+function TradesTab({ trades }: { trades: TradeItem[] }) {
   if (trades.length === 0) return <div className="p-8 text-center text-[10px] text-muted-foreground">No closed trades yet</div>
   return <div className="border rounded-lg overflow-hidden">
     <table className="w-full text-[10px]">
@@ -220,7 +274,7 @@ function TradesTab({ trades }: { trades: any[] }) {
         <th className="text-left px-3 py-2">Reason</th>
       </tr></thead>
       <tbody className="divide-y">
-        {trades.map((t: any, i: number) => (
+        {trades.map((t: TradeItem, i: number) => (
           <tr key={i} className="hover:bg-muted/20">
             <td className="px-3 py-1.5 font-medium">{t.symbol}</td>
             <td className={`px-3 py-1.5 ${t.direction === "LONG" ? "text-emerald-500" : "text-red-500"}`}>{t.direction}</td>
@@ -238,11 +292,11 @@ function TradesTab({ trades }: { trades: any[] }) {
   </div>
 }
 
-function EventsTab({ events }: { events: any[] }) {
+function EventsTab({ events }: { events: EventItem[] }) {
   if (events.length === 0) return <div className="p-8 text-center text-[10px] text-muted-foreground">No events yet</div>
   return <div className="border rounded-lg overflow-auto max-h-[500px]">
     <div className="divide-y text-[10px]">
-      {events.map((e: any, i: number) => (
+      {events.map((e: EventItem, i: number) => (
         <div key={i} className="flex items-center gap-2 px-3 py-1.5 hover:bg-muted/20">
           <span className="font-mono text-muted-foreground w-20">{e.timestamp?.split("T")[1]?.slice(0, 8) || ""}</span>
           <span className={`px-1.5 py-0.5 rounded text-[8px] font-medium ${

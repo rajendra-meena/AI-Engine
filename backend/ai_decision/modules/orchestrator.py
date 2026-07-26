@@ -1,11 +1,22 @@
 """
 Orchestrator — combines score, confidence, risk, and trade plan into a final decision.
 Applies thresholds, resolves conflicts, generates decision + reasoning.
+
+EnhancedOrchestrator — wraps the original Orchestrator + all Phase 56 modules.
 """
 
 from __future__ import annotations
 
 from typing import Any
+
+from ai_decision.modules.signal_validator import SignalValidator
+from ai_decision.modules.trade_quality import TradeQualityScorer
+from ai_decision.modules.mtf_agreement import MultiTFAgreement
+from ai_decision.modules.false_signal import FalseSignalDetector
+from ai_decision.modules.detailed_confidence import DetailedConfidenceEngine
+from ai_decision.modules.confidence_adjuster import DynamicConfidenceAdjuster
+from ai_decision.modules.ai_explainer import AIExplainer
+from ai_decision.modules.trade_approval import TradeApprovalEngine
 
 
 class Orchestrator:
@@ -93,3 +104,90 @@ class Orchestrator:
             "reasoning": all_reasoning[:8],
             "warnings": all_warnings[:5],
         }
+
+
+class EnhancedOrchestrator:
+    """Composes the original Orchestrator + all Phase 56 validation modules."""
+
+    @staticmethod
+    def orchestrate(
+        score_result: dict[str, Any],
+        confidence_result: dict[str, Any],
+        risk_result: dict[str, Any],
+        trade_plan: dict[str, Any],
+        context_snap: dict[str, Any] | None = None,
+        indicator_snap: dict[str, Any] | None = None,
+        structure_snap: dict[str, Any] | None = None,
+        pattern_snap: dict[str, Any] | None = None,
+        mtf_snap: dict[str, Any] | None = None,
+        sr_snap: dict[str, Any] | None = None,
+        decision_snap: dict[str, Any] | None = None,
+        market_snapshot: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Run original orchestrator then all Phase 56 modules."""
+        # Step 1: Original orchestration
+        base = Orchestrator.orchestrate(
+            score_result, confidence_result, risk_result, trade_plan,
+            context_snap, mtf_snap,
+        )
+
+        # Step 2: Signal Validator
+        signal_validations = SignalValidator.validate(
+            decision_snap, context_snap, indicator_snap, structure_snap,
+            pattern_snap, mtf_snap, sr_snap,
+        )
+
+        # Step 3: Trade Quality Scorer
+        trade_quality = TradeQualityScorer.evaluate(
+            decision_snap, context_snap, indicator_snap, pattern_snap, sr_snap, mtf_snap,
+        )
+
+        # Step 4: MTF Agreement
+        mtf_agreement = MultiTFAgreement.evaluate(mtf_snap)
+
+        # Step 5: False Signal Detection
+        false_signal_check = FalseSignalDetector.detect(
+            context_snap, indicator_snap, structure_snap, sr_snap,
+        )
+
+        # Step 6: Detailed Confidence
+        detailed_confidence = DetailedConfidenceEngine.evaluate(
+            context_snap, indicator_snap, structure_snap, pattern_snap, mtf_snap, sr_snap, decision_snap,
+        )
+
+        # Step 7: Dynamic Confidence Adjustment
+        base_confidence = detailed_confidence.get("overall_confidence", 0)
+        confidence_adjustment = DynamicConfidenceAdjuster.adjust(
+            context_snap, indicator_snap, market_snapshot, base_confidence,
+        )
+        adjusted_confidence = confidence_adjustment.get("adjusted_confidence", base_confidence)
+
+        # Step 8: AI Explainer
+        ai_explanation = AIExplainer.explain(
+            decision_snap, context_snap, indicator_snap, structure_snap,
+            pattern_snap, mtf_snap, sr_snap,
+            signal_validations, trade_quality, false_signal_check,
+        )
+
+        # Step 9: Trade Approval
+        approval = TradeApprovalEngine.approve(
+            detailed_confidence, trade_quality, mtf_agreement, risk_result,
+            signal_validations, false_signal_check, decision_snap,
+        )
+
+        # Merge into enriched output
+        enriched = dict(base)
+        enriched.update({
+            "signal_validations": signal_validations,
+            "trade_quality": trade_quality,
+            "mtf_agreement": mtf_agreement,
+            "false_signal_check": false_signal_check,
+            "detailed_confidence": detailed_confidence,
+            "confidence_adjustment": confidence_adjustment,
+            "adjusted_confidence": adjusted_confidence,
+            "ai_explanation": ai_explanation,
+            "approval": approval,
+            "is_trade_eligible": approval.get("approved", False),
+        })
+
+        return enriched

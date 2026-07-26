@@ -48,9 +48,9 @@ export function OrchestratorDashboard() {
   }, [])
 
   useEffect(() => {
-    fetchStatus()
+    const t = setTimeout(() => fetchStatus(), 0)
     const interval = setInterval(fetchStatus, 10000)
-    return () => clearInterval(interval)
+    return () => { clearTimeout(t); clearInterval(interval) }
   }, [fetchStatus])
 
   const handleAnalyze = async () => {
@@ -226,7 +226,7 @@ export function OrchestratorDashboard() {
 
             {!decision && (
               <div className="p-8 text-center text-[10px] text-muted-foreground">
-                No pipeline decisions yet. Click "Run Pipeline" to start.
+                No pipeline decisions yet. Click &ldquo;Run Pipeline&rdquo; to start.
               </div>
             )}
           </div>

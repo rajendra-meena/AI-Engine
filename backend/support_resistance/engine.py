@@ -13,7 +13,7 @@ from candles.events import CANDLE_CLOSED
 from market_structure.events import STRUCTURE_UPDATED
 from indicators.events import INDICATORS_UPDATED
 from support_resistance.snapshot import SRSnapshot
-from support_resistance.events import S_UPDATED
+from support_resistance.events import SUPPORT_RESISTANCE_UPDATED
 from support_resistance.config import HISTORY_LIMIT
 from support_resistance.modules.horizontal_levels import HorizontalLevels
 from support_resistance.modules.dynamic_levels import DynamicLevels
@@ -41,19 +41,22 @@ class SRUnit:
             cd = payload.get("candle", {})
             if cd.get("symbol") == self.symbol:
                 self._candle = Candle.from_dict(cd)
-                self._produce()
+                return self._produce()
         except Exception:
             pass
+        return None
 
     def update_structure(self, payload: dict):
         if payload.get("symbol") == self.symbol:
             self._structure = payload
-            self._produce()
+            return self._produce()
+        return None
 
     def update_indicator(self, payload: dict):
         if payload.get("symbol") == self.symbol:
             self._indicator = payload
-            self._produce()
+            return self._produce()
+        return None
 
     def _produce(self):
         if not self._candle or not self._indicator or not self._structure:
@@ -143,7 +146,7 @@ class SRUnit:
         )
         self._history.append(snap)
         self._update_count += 1
-        return snap
+        return snap.to_dict()
 
     def latest(self) -> dict[str, Any] | None:
         return self._history[-1].to_dict() if self._history else None
@@ -182,6 +185,27 @@ class SREngine:
         self._running = False
         log_info("SREngine stopped")
 
+    async def _publish_sr(self, snap: dict, source_event: Event):
+        """Publish SR_UPDATED event with candle identity from the source."""
+        payload = dict(snap)
+        payload["candle_version"] = source_event.payload.get("candle_version", "")
+        payload["analysis_cycle_id"] = source_event.payload.get("analysis_cycle_id", "")
+        payload["instrument_token"] = source_event.payload.get("instrument_token", 0)
+        payload["candle_timestamp"] = source_event.payload.get("candle_timestamp",
+            source_event.payload.get("candle", {}).get("time", ""))
+        payload["timeframe"] = source_event.payload.get("interval", "")
+        payload["source_provider"] = "ZERODHA_KITE"
+        payload["is_warmup"] = source_event.payload.get("is_warmup", False)
+        payload["allow_signal_generation"] = source_event.payload.get("allow_signal_generation", True)
+        payload["calculation_timestamp"] = datetime.now(timezone.utc).isoformat()
+
+        ev = Event(
+            type=SUPPORT_RESISTANCE_UPDATED,
+            source="sr_engine",
+            payload=payload,
+        )
+        await self._event_bus.publish(ev)
+
     async def _on_candle(self, event: Event):
         if not self._running:
             return
@@ -190,8 +214,10 @@ class SREngine:
                 "symbol", ""
             )
             if symbol:
-                self._get_unit(symbol).update_candle(event.payload)
-                self._stats["total_updates"] += 1
+                snap = self._get_unit(symbol).update_candle(event.payload)
+                if snap:
+                    self._stats["total_updates"] += 1
+                    await self._publish_sr(snap, event)
         except Exception as e:
             self._stats["total_errors"] += 1
             log_error("SREngine candle error", error=str(e))
@@ -202,7 +228,10 @@ class SREngine:
         try:
             symbol = event.payload.get("symbol", "")
             if symbol:
-                self._get_unit(symbol).update_structure(event.payload)
+                snap = self._get_unit(symbol).update_structure(event.payload)
+                if snap:
+                    self._stats["total_updates"] += 1
+                    await self._publish_sr(snap, event)
         except Exception as e:
             self._stats["total_errors"] += 1
 
@@ -212,7 +241,10 @@ class SREngine:
         try:
             symbol = event.payload.get("symbol", "")
             if symbol:
-                self._get_unit(symbol).update_indicator(event.payload)
+                snap = self._get_unit(symbol).update_indicator(event.payload)
+                if snap:
+                    self._stats["total_updates"] += 1
+                    await self._publish_sr(snap, event)
         except Exception as e:
             self._stats["total_errors"] += 1
 

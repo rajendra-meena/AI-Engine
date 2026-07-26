@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react"
 import {
   Activity, BarChart3, TrendingUp, DollarSign, Target, Shield,
-  RefreshCw, AlertTriangle, CheckCircle, XCircle,
+  RefreshCw,
 } from "lucide-react"
 import { performanceService } from "@/services/performanceService"
 
@@ -11,23 +11,24 @@ type TabId = "overview" | "funnel" | "pnl" | "calibration" | "regimes" | "timefr
 
 export function PerformanceDashboard() {
   const [activeTab, setActiveTab] = useState<TabId>("overview")
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const fetchAll = useCallback(async () => {
-    setError(null)
     try {
       const d = await performanceService.getOverview()
+      setError(null)
       setData(d)
     } catch { setError("Failed to load") }
     setLoading(false)
   }, [])
 
   useEffect(() => {
-    fetchAll()
+    const t = setTimeout(() => fetchAll(), 0)
     const interval = setInterval(fetchAll, 30000)
-    return () => clearInterval(interval)
+    return () => { clearTimeout(t); clearInterval(interval) }
   }, [fetchAll])
 
   const tabs = [
@@ -124,6 +125,7 @@ function SampleInfo({ count }: { count: number }) {
 }
 
 function FunnelTab() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [funnel, setFunnel] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   useEffect(() => {

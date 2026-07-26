@@ -156,8 +156,11 @@ class MarketStructureEngine:
             snap, new_swings, new_structure = unit.update(candle)
             self._stats["total_processed"] += 1
 
-            # Publish snapshot event
-            await self._publish(STRUCTURE_UPDATED, snap.to_dict())
+            # Publish snapshot event with candle identity from incoming event
+            payload = snap.to_dict()
+            payload["candle_version"] = event.payload.get("candle_version", "")
+            payload["analysis_cycle_id"] = event.payload.get("analysis_cycle_id", "")
+            await self._publish(STRUCTURE_UPDATED, payload)
 
             # Publish sub-events
             for s in new_swings:

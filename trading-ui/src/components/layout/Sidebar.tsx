@@ -6,7 +6,8 @@ import { motion } from "framer-motion"
 import { useRouter } from "next/navigation"
 import {
   LayoutDashboard, TrendingUp, History, Target, Wallet, BarChart3, Settings,
-  GitBranch, Radio, Cpu, Lightbulb, Wifi, ChevronLeft, Shield, Brain, Activity, Zap,
+  GitBranch, Radio, Cpu, Lightbulb, Wifi, ChevronLeft, Shield, Brain, BrainCircuit,
+  Activity, Database, Zap, Sparkles,
 } from "lucide-react"
 import { useCallback, useEffect } from "react"
 
@@ -20,12 +21,14 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { id: "dashboard", label: "Dashboard", icon: <LayoutDashboard className="w-4 h-4" />, href: "/dashboard" },
+  { id: "auto-trade", label: "Auto Trade", icon: <Sparkles className="w-4 h-4" />, href: "/auto-trade" },
   { id: "live", label: "Live Trading", icon: <TrendingUp className="w-4 h-4" />, href: "/live" },
   { id: "replay", label: "Replay", icon: <History className="w-4 h-4" />, href: "/workspace" },
   { id: "backtest", label: "Backtest", icon: <Target className="w-4 h-4" />, href: "/backtest" },
   { id: "paper", label: "Paper Trading", icon: <Wallet className="w-4 h-4" />, href: "/portfolio" },
   { id: "strategy", label: "Strategies", icon: <GitBranch className="w-4 h-4" />, href: "/strategy" },
   { id: "intelligence", label: "Intelligence", icon: <Radio className="w-4 h-4" />, href: "/intelligence" },
+  { id: "ai-decision", label: "AI Decision", icon: <BrainCircuit className="w-4 h-4" />, href: "/ai-decision" },
   { id: "paper-trading", label: "Paper Trading", icon: <Wallet className="w-4 h-4" />, href: "/paper-trading" },
   { id: "performance", label: "Performance", icon: <BarChart3 className="w-4 h-4" />, href: "/performance" },
   { id: "execution", label: "Execution", icon: <Zap className="w-4 h-4" />, href: "/execution" },
@@ -33,7 +36,11 @@ const NAV_ITEMS: NavItem[] = [
   { id: "orchestrator", label: "Orchestrator", icon: <Activity className="w-4 h-4" />, href: "/orchestrator" },
   { id: "ml", label: "ML", icon: <Cpu className="w-4 h-4" />, href: "/ml" },
   { id: "learning", label: "AI Learning", icon: <Brain className="w-4 h-4" />, href: "/learning" },
+  { id: "ai-performance", label: "AI Perf.", icon: <BarChart3 className="w-4 h-4" />, href: "/ai-performance" },
+  { id: "regime-center", label: "Regime Center", icon: <Activity className="w-4 h-4" />, href: "/regime-center" },
+  { id: "model-governance", label: "Models", icon: <Database className="w-4 h-4" />, href: "/model-governance" },
   { id: "risk", label: "Risk Center", icon: <Shield className="w-4 h-4" />, href: "/risk" },
+  { id: "production-readiness", label: "Production", icon: <Shield className="w-4 h-4" />, href: "/production-readiness" },
   { id: "command", label: "Command", icon: <Lightbulb className="w-4 h-4" />, href: "/command" },
   { id: "analytics", label: "Analytics", icon: <BarChart3 className="w-4 h-4" />, href: "/research" },
   { id: "settings", label: "Settings", icon: <Settings className="w-4 h-4" />, href: "/settings" },
@@ -124,7 +131,7 @@ export function Sidebar() {
       <div className="border-t p-3 space-y-2">
         <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
           <Wifi className={cn("w-3 h-3", sidebarOpen ? "" : "mx-auto")} />
-          {sidebarOpen && <span>Yahoo Finance • Connected</span>}
+          {sidebarOpen && <span>Zerodha Kite • Connected</span>}
         </div>
         {sidebarOpen && (
           <div className="text-[9px] text-muted-foreground/50">v1.0.0</div>

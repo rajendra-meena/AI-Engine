@@ -41,12 +41,17 @@ CORS_ORIGINS = os.getenv("MARKETMIND_CORS_ORIGINS", "*")
 LOG_LEVEL = os.getenv("MARKETMIND_LOG_LEVEL", "INFO")
 LOG_FORMAT = os.getenv("MARKETMIND_LOG_FORMAT", "text")  # text or json
 
-# ── Yahoo Finance (only data provider for now) ──
+# ── Yahoo Finance (legacy / offline research only) ──
 
 YAHOO_REQUEST_TIMEOUT = int(os.getenv("YAHOO_REQUEST_TIMEOUT", "30"))
 YAHOO_MAX_RETRIES = int(os.getenv("YAHOO_MAX_RETRIES", "3"))
 
-# ── Future broker settings (placeholders) ──
+# ── Auto Trade Market Data Provider ──
+# Controls which provider the Auto Trade pipeline uses.
+# "ZERODHA_KITE" is the only supported provider for live Auto Trade.
+AUTO_TRADE_MARKET_DATA_PROVIDER = os.getenv("AUTO_TRADE_MARKET_DATA_PROVIDER", "ZERODHA_KITE")
+
+# ── Zerodha Kite Connect ──
 
 ZERODHA_API_KEY = os.getenv("ZERODHA_API_KEY", "")
 ZERODHA_API_SECRET = os.getenv("ZERODHA_API_SECRET", "")

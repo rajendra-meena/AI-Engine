@@ -64,6 +64,7 @@ class DrawdownManager:
         self._initial_capital = initial_capital
         self._all_time_high = initial_capital
         self._session_high = initial_capital
+        self._session_low = initial_capital
         self._week_high = initial_capital
         self._month_high = initial_capital
         self._session_start_value = initial_capital

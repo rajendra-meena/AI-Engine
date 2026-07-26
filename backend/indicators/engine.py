@@ -37,6 +37,22 @@ from utils.logger import log_info, log_error
 class IndicatorComputeUnit:
     """Holds all indicators for one (symbol, interval)."""
 
+    @classmethod
+    def compute_max_warmup_needed(cls) -> int:
+        """Maximum candles needed across all indicators before they produce values.
+
+        Creates a probe unit and queries warmup_needed() on every indicator
+        instance. The caller should add a safety buffer (50 candles).
+        """
+        probe = cls("_probe_", "_probe_")
+        indicators = [
+            probe.ema_9, probe.ema_20, probe.ema_50, probe.ema_200,
+            probe.sma_20, probe.sma_50,
+            probe.rsi_14, probe.atr_14,
+            probe.vwap, probe.macd, probe.adx_14, probe.supertrend,
+        ]
+        return max(ind.warmup_needed() for ind in indicators)
+
     def __init__(self, symbol: str, interval: str):
         self.symbol = symbol
         self.interval = interval
@@ -187,10 +203,14 @@ class IndicatorEngine:
                 self._stats["total_snapshots_created"] += 1
                 self._stats["active_units"] = len(self._units)
 
+                payload = snapshot.to_dict()
+                # Propagate candle identity from incoming event
+                payload["candle_version"] = payload.get("candle_version", event.payload.get("candle_version", ""))
+                payload["analysis_cycle_id"] = payload.get("analysis_cycle_id", event.payload.get("analysis_cycle_id", ""))
                 ev = Event(
                     type=INDICATORS_UPDATED,
                     source="indicator_engine",
-                    payload=snapshot.to_dict(),
+                    payload=payload,
                 )
                 await self._event_bus.publish(ev)
 

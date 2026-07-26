@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { Activity, BarChart3, Target, DollarSign, RefreshCw, Play, Trash2 } from "lucide-react"
+import { Target, RefreshCw, Play, Trash2 } from "lucide-react"
 import { backtestService } from "@/services/backtestService"
 
 export function BacktestDashboard() {
@@ -23,7 +23,7 @@ export function BacktestDashboard() {
     setLoading(false)
   }, [])
 
-  useEffect(() => { fetchHistory() }, [fetchHistory])
+  useEffect(() => { const t = setTimeout(() => fetchHistory(), 0); return () => clearTimeout(t) }, [fetchHistory])
 
   const handleCreate = async () => {
     const result = await backtestService.create(newBt)

@@ -55,11 +55,12 @@ export function CommandCenter() {
 
   // Polling
   useEffect(() => {
-    fetchSnapshot()
+    const t = setTimeout(() => fetchSnapshot(), 0)
     if (refreshRate > 0) {
       timerRef.current = setInterval(fetchSnapshot, refreshRate * 1000)
     }
     return () => {
+      clearTimeout(t)
       if (timerRef.current) clearInterval(timerRef.current)
       if (abortRef.current) abortRef.current.abort()
     }

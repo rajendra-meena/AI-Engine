@@ -87,6 +87,9 @@ class LiveExecutionGate:
     def set_audit_log(self, audit): self._audit_log = audit
     def set_broker(self, broker): self._broker = broker
     def set_runtime_mgr(self, mgr): self._runtime_mgr = mgr
+    def set_zerodha_engine(self, engine):
+        """Inject the ZerodhaMarketDataEngine for data-freshness checks."""
+        self._zerodha_engine = engine
 
     def set_state(self, positions=None, daily_pnl=0.0,
                   daily_trade_count=0, account_balance=100000.0):
@@ -255,7 +258,31 @@ class LiveExecutionGate:
             else:
                 authorizations.append(f"risk_reward_ok_{reward/risk:.2f}" if risk > 0 else "risk_reward_ok")
 
-        # ── 16. Price Sanity ──
+        # ── 16. Stale Data Hard Block (Zerodha Kite) ──
+        zd = getattr(self, '_zerodha_engine', None)
+        if zd:
+            is_safe, reason = zd.is_data_safe(symbol)
+            if not is_safe:
+                failed.append(f"stale_data_block: {reason}")
+            else:
+                authorizations.append("zerodha_data_fresh")
+        else:
+            # No Zerodha engine — block (Yahoo must not be fallback)
+            failed.append("zerodha_market_data_unavailable")
+
+        # ── 17. Quote Reconciliation (WS vs REST) ──
+        if zd and zd.is_ws_connected and price and price > 0:
+            import asyncio
+            reconciliation = asyncio.run(zd.reconcile_quote(symbol, price))
+            if not reconciliation.get("passed", False):
+                diff = reconciliation.get("diff_pct", 0)
+                failed.append(f"quote_reconciliation_failed: WS/REST diff {diff:.2f}%")
+            else:
+                authorizations.append("quote_reconciliation_passed")
+        else:
+            authorizations.append("quote_reconciliation_skipped")
+
+        # ── 18. Price Sanity ──
         if price is None or price <= 0:
             failed.append("invalid_price")
         else:
@@ -267,7 +294,13 @@ class LiveExecutionGate:
         else:
             authorizations.append(f"symbol_{symbol}")
 
-        # ── 18. Broker Connectivity ──
+        # ── 19. Symbol / Trading Session ──
+        if not symbol or not symbol.strip():
+            failed.append("invalid_symbol")
+        else:
+            authorizations.append(f"symbol_{symbol}")
+
+        # ── 20. Broker Connectivity ──
         if self._broker:
             try:
                 import asyncio
@@ -281,10 +314,10 @@ class LiveExecutionGate:
         else:
             authorizations.append("broker_available")
 
-        # ── 19. Emergency State ──
+        # ── 21. Emergency State ──
         authorizations.append("emergency_inactive")
 
-        # ── 20. Final Config Authorization ──
+        # ── 22. Final Config Authorization ──
         if self._config_guard:
             if self._config_guard.has_drift():
                 failed.append("config_drift_detected")

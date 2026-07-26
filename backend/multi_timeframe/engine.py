@@ -42,7 +42,12 @@ class MTFUnit:
         self._last_condition = ""
         self._last_permission = ""
 
-    def update(self, payload: dict) -> MTFSnapshot | None:
+    def update(
+        self,
+        payload: dict,
+        trigger_candle_version: str = "",
+        analysis_cycle_id: str = "",
+    ) -> MTFSnapshot | None:
         interval = payload.get("interval", "")
         if interval not in self._contexts:
             return None
@@ -95,6 +100,8 @@ class MTFUnit:
             trading_permission=permission_data["permission"],
             overall_confidence=avg_conf,
             warnings=permission_data["warnings"],
+            trigger_candle_version=trigger_candle_version,
+            analysis_cycle_id=analysis_cycle_id,
         )
 
         self._history.append(snap)
@@ -148,13 +155,19 @@ class MTFEngine:
             payload = event.payload
             symbol = payload.get("symbol", "")
             snapshot_data = payload.get("snapshot", payload)
+            trigger_cv = payload.get("candle_version", "")
+            analysis_cycle_id = payload.get("analysis_cycle_id", "")
             if not symbol:
                 return
 
             if symbol not in self._units:
                 self._units[symbol] = MTFUnit(symbol)
 
-            snap = self._units[symbol].update(snapshot_data)
+            snap = self._units[symbol].update(
+                snapshot_data,
+                trigger_candle_version=trigger_cv,
+                analysis_cycle_id=analysis_cycle_id,
+            )
             if snap:
                 self._stats["total_updates"] += 1
                 d = snap.to_dict()

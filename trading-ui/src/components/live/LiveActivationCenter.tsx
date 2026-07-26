@@ -2,9 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react"
 import {
-  Shield, Activity, AlertTriangle, CheckCircle, XCircle, BarChart3,
-  RefreshCw, Lock, Play, Zap, Radio, TrendingUp, Clock, Siren,
-  BugPlay, Shuffle, UserCheck, SkipForward, PauseOctagon, RotateCcw,
+  Shield, Activity, AlertTriangle, CheckCircle,
+  RefreshCw, Lock, Play, Zap, Clock, Siren,
+  PauseOctagon, RotateCcw,
   Timer, Ban,
 } from "lucide-react"
 import { liveActivationService } from "@/services/liveActivationService"
@@ -44,9 +44,9 @@ export function LiveActivationCenter() {
   }, [])
 
   useEffect(() => {
-    fetchAll()
+    const t = setTimeout(() => fetchAll(), 0)
     const interval = setInterval(fetchAll, 15000)
-    return () => clearInterval(interval)
+    return () => { clearTimeout(t); clearInterval(interval) }
   }, [fetchAll])
 
   // Countdown timer when ACTIVE
@@ -91,45 +91,6 @@ export function LiveActivationCenter() {
     const s = seconds % 60
     return `${m}:${s.toString().padStart(2, "0")}`
   }
-
-  // Confirmation dialog
-  const ConfirmationDialog = ({ action, onConfirm, onCancel }: {
-    action: string; onConfirm: () => void; onCancel: () => void
-  }) => (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="rounded-lg border bg-card p-6 max-w-md mx-4 shadow-xl">
-        <div className="flex items-center gap-2 mb-3">
-          {action === "kill_switch" ? (
-            <Siren className="w-5 h-5 text-red-500" />
-          ) : (
-            <AlertTriangle className="w-5 h-5 text-amber-500" />
-          )}
-          <h3 className="text-sm font-bold">
-            {action === "kill_switch" ? "KILL SWITCH" : action.toUpperCase()}
-          </h3>
-        </div>
-        <p className="text-[10px] text-muted-foreground mb-4">
-          {action === "arm" && "This will arm the system for live activation. All 28 prerequisites must pass."}
-          {action === "start" && "This will begin the activation window. Live orders will be authorized."}
-          {action === "kill_switch" && "This EMERGENCY STOP blocks all new live orders immediately. Requires explicit recovery."}
-          {action === "revoke" && "This revokes the current activation. Requires fresh validation to re-activate."}
-          {action === "recover" && "This begins recovery from a terminal state. Complete re-validation required for activation."}
-        </p>
-        <div className="flex gap-2 justify-end">
-          <button onClick={onCancel}
-            className="px-3 py-1.5 rounded text-[10px] font-medium border bg-card hover:bg-accent">
-            Cancel
-          </button>
-          <button onClick={onConfirm}
-            className={`px-3 py-1.5 rounded text-[10px] font-medium text-white ${
-              action === "kill_switch" ? "bg-red-600 hover:bg-red-700" : "bg-amber-600 hover:bg-amber-700"
-            }`}>
-            Confirm {action.replace(/_/g, " ")}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
 
   return (
     <div className="space-y-4">
@@ -428,7 +389,7 @@ export function LiveActivationCenter() {
               <tbody className="divide-y">
                 {(!status?.prerequisites || status.prerequisites.length === 0) ? (
                   <tr><td colSpan={5} className="px-3 py-4 text-center text-muted-foreground">
-                    No prerequisites loaded. Click "Run Prerequisite Check".
+                    No prerequisites loaded. Click &ldquo;Run Prerequisite Check&rdquo;.
                   </td></tr>
                 ) : (
                   /* Will use fetchAll to get fresh data */
@@ -486,4 +447,44 @@ function MetricCard({ label, value, color }: { label: string; value: string; col
     <div className="text-[9px] text-muted-foreground uppercase tracking-wider">{label}</div>
     <div className={`text-lg font-bold font-mono mt-0.5 ${color || ""}`}>{value}</div>
   </div>
+}
+
+function ConfirmationDialog({ action, onConfirm, onCancel }: {
+  action: string; onConfirm: () => void; onCancel: () => void
+}) {
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="rounded-lg border bg-card p-6 max-w-md mx-4 shadow-xl">
+        <div className="flex items-center gap-2 mb-3">
+          {action === "kill_switch" ? (
+            <Siren className="w-5 h-5 text-red-500" />
+          ) : (
+            <AlertTriangle className="w-5 h-5 text-amber-500" />
+          )}
+          <h3 className="text-sm font-bold">
+            {action === "kill_switch" ? "KILL SWITCH" : action.toUpperCase()}
+          </h3>
+        </div>
+        <p className="text-[10px] text-muted-foreground mb-4">
+          {action === "arm" && "This will arm the system for live activation. All 28 prerequisites must pass."}
+          {action === "start" && "This will begin the activation window. Live orders will be authorized."}
+          {action === "kill_switch" && "This EMERGENCY STOP blocks all new live orders immediately. Requires explicit recovery."}
+          {action === "revoke" && "This revokes the current activation. Requires fresh validation to re-activate."}
+          {action === "recover" && "This begins recovery from a terminal state. Complete re-validation required for activation."}
+        </p>
+        <div className="flex gap-2 justify-end">
+          <button onClick={onCancel}
+            className="px-3 py-1.5 rounded text-[10px] font-medium border bg-card hover:bg-accent">
+            Cancel
+          </button>
+          <button onClick={onConfirm}
+            className={`px-3 py-1.5 rounded text-[10px] font-medium text-white ${
+              action === "kill_switch" ? "bg-red-600 hover:bg-red-700" : "bg-amber-600 hover:bg-amber-700"
+            }`}>
+            Confirm {action.replace(/_/g, " ")}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }

@@ -44,17 +44,27 @@ class TradingContextUnit:
         self._indicator: dict[str, Any] | None = None
         self._structure: dict[str, Any] | None = None
         self._patterns: dict[str, Any] | None = None
+        self._sr: dict[str, Any] | None = None
         self._history: deque[TradingContextSnapshot] = deque(maxlen=_HISTORY_LIMIT)
         self._update_count = 0
         self._last_bias: str = ""
         self._last_risk: str = ""
         self._last_mode: str = ""
+        # Track candle versions for version-aware barrier
+        self._input_versions: dict[str, str] = {}
+
+    def _check_version(self, payload: dict) -> str:
+        cv = payload.get("candle_version", "")
+        return cv
 
     def update_indicator(self, payload: dict):
         if (
             payload.get("symbol") == self.symbol
             and payload.get("interval") == self.interval
         ):
+            cv = self._check_version(payload)
+            if cv:
+                self._input_versions["indicator"] = cv
             self._indicator = payload
             self._try_produce()
 
@@ -63,6 +73,9 @@ class TradingContextUnit:
             payload.get("symbol") == self.symbol
             and payload.get("interval") == self.interval
         ):
+            cv = self._check_version(payload)
+            if cv:
+                self._input_versions["structure"] = cv
             self._structure = payload
             self._try_produce()
 
@@ -71,11 +84,43 @@ class TradingContextUnit:
             payload.get("symbol") == self.symbol
             and payload.get("interval") == self.interval
         ):
+            cv = self._check_version(payload)
+            if cv:
+                self._input_versions["patterns"] = cv
             self._patterns = payload
             self._try_produce()
 
+    def update_sr(self, payload: dict):
+        if (
+            payload.get("symbol") == self.symbol
+            and payload.get("interval") == self.interval
+        ):
+            cv = self._check_version(payload)
+            if cv:
+                self._input_versions["sr"] = cv
+            self._sr = payload
+            self._try_produce()
+
+    def _all_inputs_ready(self) -> tuple[bool, str]:
+        """Version-aware barrier: indicator + structure must be ready and same version.
+
+        SR and patterns are beneficial but not mandatory for context.
+        Returns (ready: bool, reason: str).
+        """
+        if not self._indicator:
+            return False, "Missing indicator"
+        if not self._structure:
+            return False, "Missing market structure"
+        # At minimum, indicator and structure must agree on candle version
+        ind_cv = self._indicator.get("candle_version", "")
+        struct_cv = self._structure.get("candle_version", "")
+        if ind_cv and struct_cv and ind_cv != struct_cv:
+            return False, f"Version mismatch: indicator={ind_cv} vs structure={struct_cv}"
+        return True, "Ready"
+
     def _try_produce(self) -> TradingContextSnapshot | None:
-        if not self._indicator or not self._structure:
+        ready, reason = self._all_inputs_ready()
+        if not ready:
             return None
 
         trend = TrendContext.evaluate(self._indicator, self._structure)
@@ -220,7 +265,13 @@ class TradingContextEngine:
                 ev = Event(
                     type=TRADING_CONTEXT_UPDATED,
                     source="trading_context_engine",
-                    payload={"symbol": symbol, "interval": interval, "snapshot": snap},
+                    payload={
+                        "symbol": symbol,
+                        "interval": interval,
+                        "candle_version": payload.get("candle_version", ""),
+                        "analysis_cycle_id": payload.get("analysis_cycle_id", ""),
+                        "snapshot": snap,
+                    },
                 )
                 await self._event_bus.publish(ev)
 

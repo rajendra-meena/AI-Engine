@@ -14,6 +14,8 @@ Key design:
 
 from __future__ import annotations
 
+import hashlib
+from collections import deque
 from datetime import datetime, timezone
 from typing import Any
 
@@ -46,6 +48,8 @@ class CandleEngine:
         await engine.stop()
     """
 
+    _CYCLE_ID_LIMIT = 10000
+
     def __init__(self, stream_router: StreamRouter, event_bus: EventBus):
         self._router = stream_router
         self._event_bus = event_bus
@@ -58,9 +62,15 @@ class CandleEngine:
             "total_candles_closed": 0,
             "total_candles_started": 0,
             "total_errors": 0,
+            "total_duplicates_skipped": 0,
             "start_time": datetime.now(timezone.utc).isoformat(),
         }
         self._running = False
+        # Bounded idempotency set: max 10000 cycle IDs to prevent unbounded memory growth.
+        # Older entries are evicted in FIFO order. 10000 covers ~17 hours of 1m candles
+        # across 5 timeframes for 10 symbols.
+        self._published_cycle_ids: set[str] = set()
+        self._cycle_id_order: deque[str] = deque(maxlen=self._CYCLE_ID_LIMIT)
 
     # ── Lifecycle ──
 
@@ -141,14 +151,34 @@ class CandleEngine:
                 closed = active.to_candle()
                 self._buffer.add(closed)
                 self._stats["total_candles_closed"] += 1
-                await self._publish_event(
-                    CANDLE_CLOSED,
-                    {
-                        "symbol": symbol,
-                        "interval": interval,
-                        "candle": closed.to_dict_full(),
-                    },
-                )
+                candle_version = f"{interval}_{closed.time}"
+                # Deterministic analysis_cycle_id from candle identity
+                # Same candle → same cycle_id → idempotent
+                provider = "ZERODHA_KITE"
+                cycle_src = f"{provider}:{interval}:{candle_version}"
+                analysis_cycle_id = hashlib.sha256(cycle_src.encode()).hexdigest()[:16]
+
+                # Idempotency: reject if this exact candle/cycle already published
+                # Still create the new candle below; just don't re-publish the close.
+                if analysis_cycle_id not in self._published_cycle_ids:
+                    # Evict oldest entry if at capacity
+                    if len(self._published_cycle_ids) >= self._CYCLE_ID_LIMIT:
+                        evicted = self._cycle_id_order.popleft()
+                        self._published_cycle_ids.discard(evicted)
+                    self._published_cycle_ids.add(analysis_cycle_id)
+                    self._cycle_id_order.append(analysis_cycle_id)
+                    await self._publish_event(
+                        CANDLE_CLOSED,
+                        {
+                            "symbol": symbol,
+                            "interval": interval,
+                            "candle_version": candle_version,
+                            "analysis_cycle_id": analysis_cycle_id,
+                            "candle": closed.to_dict_full(),
+                        },
+                    )
+                else:
+                    self._stats["total_duplicates_skipped"] += 1
 
             # Start new candle
             self._active[key] = ActiveCandle(

@@ -14,7 +14,7 @@ from typing import Any
 from core.event_bus import EventBus, Event
 from trading_context.events import TRADING_CONTEXT_UPDATED
 from multi_timeframe.events import MTF_UPDATED
-from support_resistance.events import S_UPDATED
+from support_resistance.events import SUPPORT_RESISTANCE_UPDATED
 from ai_decision.snapshot import DecisionSnapshot
 from ai_decision.events import AI_DECISION_UPDATED
 from ai_decision.modules.score import ScoreEngine
@@ -37,24 +37,48 @@ class AIUnit:
         self._sr: dict[str, Any] | None = None
         self._history: deque[DecisionSnapshot] = deque(maxlen=_HISTORY_LIMIT)
         self._update_count = 0
+        # Track candle versions for version-aware barrier
+        self._input_versions: dict[str, str] = {}
 
     def update_context(self, payload: dict):
         if payload.get("symbol") == self.symbol:
+            cv = payload.get("candle_version", "")
+            if cv:
+                self._input_versions["context"] = cv
             self._context = payload.get("snapshot", payload)
             self._produce()
 
     def update_mtf(self, payload: dict):
         if payload.get("symbol") == self.symbol:
+            cv = payload.get("candle_version", "")
+            if cv:
+                self._input_versions["mtf"] = cv
             self._mtf = payload
             self._produce()
 
     def update_sr(self, payload: dict):
         if payload.get("symbol") == self.symbol:
+            cv = payload.get("candle_version", "")
+            if cv:
+                self._input_versions["sr"] = cv
             self._sr = payload
             self._produce()
 
+    def _all_inputs_same_version(self) -> bool:
+        """Version-aware barrier: all 3 inputs must share the same candle_version."""
+        if len(self._input_versions) < 3:
+            return False
+        versions = set(self._input_versions.values())
+        if len(versions) != 1:
+            return False
+        cv = versions.pop()
+        return bool(cv)
+
     def _produce(self):
         if not self._context:
+            return
+        # Version barrier: require all inputs on same candle_version
+        if not self._all_inputs_same_version():
             return
 
         score_result = ScoreEngine.evaluate(self._context, self._mtf, self._sr)
@@ -115,7 +139,7 @@ class AIDecisionEngine:
             TRADING_CONTEXT_UPDATED, self._on_context, name="ai_decision_context"
         )
         self._event_bus.subscribe(MTF_UPDATED, self._on_mtf, name="ai_decision_mtf")
-        self._event_bus.subscribe(S_UPDATED, self._on_sr, name="ai_decision_sr")
+        self._event_bus.subscribe(SUPPORT_RESISTANCE_UPDATED, self._on_sr, name="ai_decision_sr")
         log_info("AIDecisionEngine started")
 
     async def stop(self):

@@ -134,6 +134,12 @@ async def run_validation(params: dict[str, Any]):
     return report
 
 
+@router.get("/api/backtest/validation/history")
+async def validation_history():
+    """List previous validation runs."""
+    return {"validations": list(_validations.values()), "total": len(_validations)}
+
+
 @router.get("/api/backtest/validation/{val_id}")
 async def get_validation(val_id: str):
     """Get a validation report."""
@@ -141,12 +147,6 @@ async def get_validation(val_id: str):
     if not report:
         raise HTTPException(status_code=404, detail="Validation not found")
     return report
-
-
-@router.get("/api/backtest/validation/history")
-async def validation_history():
-    """List previous validation runs."""
-    return {"validations": list(_validations.values()), "total": len(_validations)}
 
 
 @router.delete("/api/backtest/validation/{val_id}")

@@ -24,7 +24,7 @@ export function ResearchDashboard() {
     } catch { /* ignore */ }
   }, [])
 
-  useEffect(() => { fetchHistory() }, [fetchHistory])
+  useEffect(() => { const t = setTimeout(() => fetchHistory(), 0); return () => clearTimeout(t) }, [fetchHistory])
 
   const handleSelectValidation = async (val: any) => {
     setSelectedVal(val)

@@ -49,9 +49,9 @@ export function PreLiveControlCenter() {
   }, [])
 
   useEffect(() => {
-    fetchAll()
+    const t = setTimeout(() => fetchAll(), 0)
     const interval = setInterval(fetchAll, 15000)
-    return () => clearInterval(interval)
+    return () => { clearTimeout(t); clearInterval(interval) }
   }, [fetchAll])
 
   const handleRunValidation = async () => {
@@ -230,7 +230,7 @@ export function PreLiveControlCenter() {
         <div className="space-y-2">
           {report?.checks?.length === 0 ? (
             <div className="p-8 text-center text-[10px] text-muted-foreground">
-              No checks run yet. Click "Run Validation" to start.
+              No checks run yet. Click &ldquo;Run Validation&rdquo; to start.
             </div>
           ) : (
             <div className="border rounded-lg overflow-hidden">

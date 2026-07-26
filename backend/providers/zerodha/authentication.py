@@ -68,9 +68,44 @@ class KiteAuthentication:
         """Try to initialize KiteConnect with an existing access token."""
         if not self._api_key or not self._access_token:
             return False
+        return self._init_kite_session(self._access_token)
+
+    def restore_token(self, access_token: str, user_id: str = "") -> bool:
+        """
+        Restore a previously saved access token.
+
+        Called by TokenManager on provider startup to restore a session
+        that was persisted to disk after a successful OAuth login.
+        Unlike _load_from_env, this accepts a token from any storage source.
+
+        Args:
+            access_token: The saved Kite access token
+            user_id: Optional user identifier for logging
+
+        Returns:
+            True if the token was valid and session restored
+        """
+        if not self._api_key or not access_token:
+            return False
+        self._access_token = access_token
+        if user_id:
+            self._user_id = user_id
+        success = self._init_kite_session(access_token)
+        if success:
+            log_info(
+                "KiteAuth: session restored from persistent storage",
+                user_id=self._user_id,
+            )
+        else:
+            log_warn("KiteAuth: saved token invalid, re-authentication required")
+            self._access_token = None
+        return success
+
+    def _init_kite_session(self, access_token: str) -> bool:
+        """Shared logic: initialise KiteConnect with a token and validate."""
         try:
             self._kite = KiteConnect(api_key=self._api_key)
-            self._kite.set_access_token(self._access_token)
+            self._kite.set_access_token(access_token)
             # Test the token by fetching profile
             profile = self._kite.profile()
             self._user_id = profile.get("user_id", "")
@@ -78,15 +113,9 @@ class KiteAuthentication:
             self._user_email = profile.get("email", "")
             self._authenticated = True
             self._last_auth_time = datetime.now(timezone.utc)
-            log_info(
-                "KiteAuth: restored session",
-                user_id=self._user_id,
-                user_name=self._user_name,
-            )
             return True
         except Exception as e:
-            log_warn("KiteAuth: stored token invalid, re-authentication required", error=str(e))
-            self._access_token = None
+            log_warn("KiteAuth: token validation failed", error=str(e))
             self._kite = None
             return False
 

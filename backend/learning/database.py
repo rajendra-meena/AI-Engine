@@ -253,6 +253,50 @@ def init_learning_tables():
         )
     """)
 
+    # Learning Metadata (used by integration.py, created here for table existence)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS learning_metadata (
+            id TEXT PRIMARY KEY,
+            prediction_id TEXT UNIQUE NOT NULL,
+            correlation_id TEXT UNIQUE,
+            prediction_source TEXT DEFAULT 'ai_engine',
+            ml_prediction TEXT,
+            ml_confidence REAL,
+            ai_decision TEXT,
+            model_version TEXT,
+            prediction_expiry TEXT,
+            created_at TEXT NOT NULL
+        )
+    """)
+
+    # Phase 56: AI Decision Training Dataset
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS ai_decision_training_dataset (
+            id                      TEXT PRIMARY KEY,
+            symbol                  TEXT NOT NULL,
+            timestamp               TEXT NOT NULL,
+            decision                TEXT NOT NULL,
+            direction               TEXT,
+            score                   INTEGER,
+            confidence              INTEGER,
+            trade_quality_grade     TEXT,
+            trade_quality_score     INTEGER,
+            mtf_agreement_percent   REAL,
+            detailed_confidence     TEXT,
+            signal_validations      TEXT,
+            false_signal_detections TEXT,
+            dynamic_adjustments     TEXT,
+            trade_approval          TEXT,
+            ai_explanation          TEXT,
+            indicators_snapshot     TEXT,
+            market_context          TEXT,
+            trade_outcome           TEXT,
+            pnl                     REAL,
+            screenshot_id           TEXT,
+            created_at              TEXT NOT NULL
+        )
+    """)
+
     # Indexes
     for idx in [
         "CREATE INDEX IF NOT EXISTS idx_pj_symbol ON prediction_journal(symbol)",
@@ -269,6 +313,10 @@ def init_learning_tables():
         "CREATE INDEX IF NOT EXISTS idx_sp_symbol ON shadow_prediction(symbol)",
         "CREATE INDEX IF NOT EXISTS idx_sp_winner ON shadow_prediction(winner)",
         "CREATE INDEX IF NOT EXISTS idx_rp_regime ON regime_performance(regime)",
+        "CREATE INDEX IF NOT EXISTS idx_adt_symbol ON ai_decision_training_dataset(symbol)",
+        "CREATE INDEX IF NOT EXISTS idx_adt_timestamp ON ai_decision_training_dataset(timestamp)",
+        "CREATE INDEX IF NOT EXISTS idx_adt_grade ON ai_decision_training_dataset(trade_quality_grade)",
+        "CREATE INDEX IF NOT EXISTS idx_adt_outcome ON ai_decision_training_dataset(trade_outcome)",
     ]:
         conn.execute(idx)
 

@@ -41,9 +41,9 @@ export function RiskDashboard() {
   }, [])
 
   useEffect(() => {
-    fetchData()
+    const t = setTimeout(() => fetchData(), 0)
     const interval = setInterval(fetchData, 10000)
-    return () => clearInterval(interval)
+    return () => { clearTimeout(t); clearInterval(interval) }
   }, [fetchData])
 
   const handleEmergency = async (action: string) => {
@@ -373,7 +373,7 @@ function SizingTab() {
     }
   }
 
-  useEffect(() => { calculate() }, [method, params])
+  useEffect(() => { const t = setTimeout(() => calculate(), 0); return () => clearTimeout(t) }, [method, params])
 
   return (
     <div className="grid grid-cols-2 gap-4">
