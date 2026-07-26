@@ -291,7 +291,7 @@ export function AIPerformanceDashboard() {
         {activeTab === "trades" && (
           <div className="space-y-2">
             {trades.length === 0 ? (
-              <div className="p-8 text-center text-[10px] text-muted-foreground">No trades evaluated yet. Click "Run Evaluation" to start.</div>
+              <div className="p-8 text-center text-[10px] text-muted-foreground">No trades evaluated yet. Click &quot;Run Evaluation&quot; to start.</div>
             ) : (
               <div className="border rounded-lg overflow-hidden">
                 <table className="w-full text-[10px]">
