@@ -33,7 +33,8 @@ export function Header() {
   const setSelectedSymbol = useMarketStore((s) => s.setSelectedSymbol)
   const setChartSymbol = useChartStore((s) => s.setSymbol)
   const userId = useBrokerStore((s) => s.user_id)
-  const displayLabel = userId || useBrokerStore((s) => s.user_name)
+  const userName = useBrokerStore((s) => s.user_name)
+  const displayLabel = userId || userName
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { setMounted(true) }, [])
 
