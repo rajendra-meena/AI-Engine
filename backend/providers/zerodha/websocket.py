@@ -197,10 +197,11 @@ class KiteWebSocketClient:
         self._stats["connected"] = False
         log_info("KiteWebSocket: closed", code=code, reason=reason)
 
-    def _on_error_wrapper(self, ws, error):
-        """Called on WebSocket error."""
-        self._stats["last_error"] = str(error)
-        log_error("KiteWebSocket: error", error=str(error))
+    def _on_error_wrapper(self, ws, code, reason):
+        """Called on WebSocket error. Kite calls on_error(ws, code, reason)."""
+        self._stats["last_error"] = f"{code}: {reason}"
+        self._connected = False
+        log_error("KiteWebSocket: error", code=code, reason=reason)
 
     def _on_reconnect_wrapper(self, ws, attempts_count):
         """Called on reconnect attempt."""
