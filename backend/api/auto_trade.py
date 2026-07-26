@@ -1183,7 +1183,7 @@ async def _engine_lifecycle():
 
     Analysis is blocked until DATA_READY.
     """
-    global _engine_state
+    global _engine_state, _analysis_enabled
 
     # State mapping: ZerodhaMarketDataEngine state → AutoTrade state
     _ZERODHA_TO_AT = {
@@ -1203,54 +1203,64 @@ async def _engine_lifecycle():
         "ERROR": ENGINE_STATE_ERROR,
     }
 
-    # Step 1: Start Zerodha engine and wait for connection
-    _engine_state = ENGINE_STATE_AUTHENTICATING
-    if _zerodha_engine:
-        if not _zerodha_engine.is_running:
-            await _zerodha_engine.start()
+    try:
+        # Step 1: Start Zerodha engine and wait for connection
+        _engine_state = ENGINE_STATE_AUTHENTICATING
+        if _zerodha_engine:
+            if not _zerodha_engine.is_running:
+                await _zerodha_engine.start()
 
-        for _ in range(60):
-            if not _engine_running:
-                return
-            if _zerodha_engine.is_ws_connected:
-                break
-            await asyncio.sleep(1)
+            for _ in range(60):
+                if not _engine_running:
+                    return
+                if _zerodha_engine.is_ws_connected:
+                    break
+                await asyncio.sleep(1)
 
-    if not _zerodha_engine or not _zerodha_engine.is_ws_connected:
-        _engine_state = ENGINE_STATE_ERROR
-        _engine_running = False
-        log_error("AutoTrade: Zerodha engine failed to connect")
-        return
-
-    # Step 2: Mirror Zerodha engine state through warmup → DATA_READY
-    for _ in range(120):
-        if not _engine_running:
+        if not _zerodha_engine or not _zerodha_engine.is_ws_connected:
+            _engine_state = ENGINE_STATE_ERROR
+            _engine_running = False
+            _analysis_enabled = False
+            log_error("AutoTrade: Zerodha engine failed to connect")
             return
 
-        z_state = _zerodha_engine.state if _zerodha_engine else "ERROR"
-        _engine_state = _ZERODHA_TO_AT.get(z_state, ENGINE_STATE_SCANNING)
+        # Step 2: Mirror Zerodha engine state through warmup → DATA_READY
+        for _ in range(120):
+            if not _engine_running:
+                return
 
-        # Analysis only allowed from DATA_READY onward
-        if z_state in ("DATA_READY", "SCANNING"):
-            break
+            z_state = _zerodha_engine.state if _zerodha_engine else "ERROR"
+            _engine_state = _ZERODHA_TO_AT.get(z_state, ENGINE_STATE_SCANNING)
 
-        # Also check freshness tracker as fallback
-        if _freshness_tracker and _freshness_tracker.get_status_summary().get("live", 0) > 0:
-            _engine_state = ENGINE_STATE_SCANNING
-            break
+            # Analysis only allowed from DATA_READY onward
+            if z_state in ("DATA_READY", "SCANNING"):
+                break
 
-        await asyncio.sleep(1)
+            # Also check freshness tracker as fallback
+            if _freshness_tracker and _freshness_tracker.get_status_summary().get("live", 0) > 0:
+                _engine_state = ENGINE_STATE_SCANNING
+                break
 
-    if _engine_state not in (ENGINE_STATE_SCANNING,):
-        log_warn("AutoTrade: warmup timeout, continuing in current state",
-                 state=_engine_state, zerodha_state=_zerodha_engine.state if _zerodha_engine else "N/A")
-    else:
-        log_info("AutoTrade: engine ready", state=_engine_state,
-                 zerodha_state=_zerodha_engine.state if _zerodha_engine else "N/A")
+            await asyncio.sleep(1)
 
-    # Step 3: Register event handlers
-    _register_event_handlers()
-    log_info("AutoTrade: engine lifecycle started", state=_engine_state)
+        if _engine_state not in (ENGINE_STATE_SCANNING,):
+            log_warn("AutoTrade: warmup timeout, continuing in current state",
+                     state=_engine_state, zerodha_state=_zerodha_engine.state if _zerodha_engine else "N/A")
+        else:
+            log_info("AutoTrade: engine ready", state=_engine_state,
+                     zerodha_state=_zerodha_engine.state if _zerodha_engine else "N/A")
+
+        # Step 3: Register event handlers
+        _register_event_handlers()
+        log_info("AutoTrade: engine lifecycle started", state=_engine_state)
+
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        _engine_state = ENGINE_STATE_ERROR
+        _engine_running = False
+        _analysis_enabled = False
+        log_error("AutoTrade: lifecycle crashed", error=str(e))
 
 
 # ── API Endpoints ──
