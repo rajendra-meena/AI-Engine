@@ -1337,16 +1337,15 @@ async def auto_trade_start():
                 "message": "ZerodhaMarketDataEngine not initialized. Cannot start Auto Trade.",
             }
 
-        # Start the Zerodha engine if not running (it will check for existing connection)
-        if not _zerodha_engine.is_running:
-            await _zerodha_engine.start()
-
         _analysis_enabled = True
         _engine_running = True
         _engine_paused = False
         _engine_state = ENGINE_STATE_AUTHENTICATING
 
-        # Start the engine lifecycle task (initializes Zerodha, waits for ticks, registers handlers)
+        # Start the engine lifecycle task (handles Zerodha init, warmup, tick registration)
+        # NOTE: We do NOT call _zerodha_engine.start() here — it blocks for minutes
+        # on authentication + instrument loading + warmup. The lifecycle task handles
+        # all initialization asynchronously so this endpoint returns immediately.
         _engine_task = asyncio.create_task(_engine_lifecycle())
 
         # Start the health watchdog (low-frequency health checks)
