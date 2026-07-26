@@ -187,6 +187,7 @@ export function AutoTradeWorkspace() {
   const [cancellingOrder, setCancellingOrder] = useState(false)
   const [killingSwitch, setKillingSwitch] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
+  const [isToggling, setIsToggling] = useState(false)
 
   // User settings
   const [marketUniverse, setMarketUniverse] = useState("all")
@@ -205,13 +206,15 @@ export function AutoTradeWorkspace() {
   const fetchWorkspace = useCallback(async () => {
     try {
       const data = await autoTradeService.getWorkspace()
-      setWorkspace(data)
+      if (!isToggling) {
+        setWorkspace(data)
+      }
       setError(null)
     } catch (e) {
       setError("Could not connect to backend")
     }
     setLoading(false)
-  }, [])
+  }, [isToggling])
 
   useEffect(() => {
     const t = setTimeout(() => fetchWorkspace(), 0)
@@ -226,6 +229,7 @@ export function AutoTradeWorkspace() {
 
   const handleStart = useCallback(async () => {
     setError(null)
+    setIsToggling(true)
     try {
       const result = await autoTradeService.start()
       if (!result.success) {
@@ -235,34 +239,41 @@ export function AutoTradeWorkspace() {
     } catch {
       setError("Failed to start engine")
     }
+    setIsToggling(false)
   }, [fetchWorkspace])
 
   const handleStop = useCallback(async () => {
     setConfirmAction(null)
+    setIsToggling(true)
     try {
       await autoTradeService.stop()
       await fetchWorkspace()
     } catch {
       setError("Failed to stop engine")
     }
+    setIsToggling(false)
   }, [fetchWorkspace])
 
   const handlePause = useCallback(async () => {
+    setIsToggling(true)
     try {
       await autoTradeService.pause()
       await fetchWorkspace()
     } catch {
       setError("Failed to pause engine")
     }
+    setIsToggling(false)
   }, [fetchWorkspace])
 
   const handleResume = useCallback(async () => {
+    setIsToggling(true)
     try {
       await autoTradeService.resume()
       await fetchWorkspace()
     } catch {
       setError("Failed to resume engine")
     }
+    setIsToggling(false)
   }, [fetchWorkspace])
 
   /* ════════════════ Trade Actions ════════════════ */
@@ -355,7 +366,7 @@ export function AutoTradeWorkspace() {
 
   const engine = workspace?.engine
   const engineState = engine?.state || "OFF"
-  const isRunning = engine?.running || false
+  const isRunning = engine?.analysis_enabled || engine?.running || false
   const isPaused = engine?.paused || false
   const readiness = workspace?.readiness || {}
   const candidates = workspace?.candidates || []
@@ -438,25 +449,25 @@ export function AutoTradeWorkspace() {
                   </div>
                 </div>
                 {!isRunning ? (
-                  <button onClick={handleStart} disabled={loading}
+                  <button onClick={handleStart} disabled={loading || isToggling}
                     className="flex items-center gap-1 px-3 py-1.5 rounded text-[10px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors">
-                    <Power className="w-3 h-3" /> ON
+                    {isToggling ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Power className="w-3 h-3" />} {isToggling ? "Starting..." : "ON"}
                   </button>
                 ) : (
                   <div className="flex gap-1">
                     {isPaused ? (
-                      <button onClick={handleResume}
-                        className="flex items-center gap-1 px-2 py-1.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 transition-colors">
-                        <Play className="w-3 h-3" /> Resume
+                      <button onClick={handleResume} disabled={isToggling}
+                        className="flex items-center gap-1 px-2 py-1.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 disabled:opacity-50 transition-colors">
+                        {isToggling ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Play className="w-3 h-3" />} {isToggling ? "Resuming..." : "Resume"}
                       </button>
                     ) : (
-                      <button onClick={handlePause}
-                        className="flex items-center gap-1 px-2 py-1.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 transition-colors">
-                        <ChevronRight className="w-3 h-3" /> Pause
+                      <button onClick={handlePause} disabled={isToggling}
+                        className="flex items-center gap-1 px-2 py-1.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 disabled:opacity-50 transition-colors">
+                        {isToggling ? <RefreshCw className="w-3 h-3 animate-spin" /> : <ChevronRight className="w-3 h-3" />} {isToggling ? "Pausing..." : "Pause"}
                       </button>
                     )}
-                    <button onClick={() => setConfirmAction({ type: "stop" })}
-                      className="flex items-center gap-1 px-2 py-1.5 rounded text-[10px] font-medium bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors">
+                    <button onClick={() => setConfirmAction({ type: "stop" })} disabled={isToggling}
+                      className="flex items-center gap-1 px-2 py-1.5 rounded text-[10px] font-medium bg-red-500/10 text-red-500 hover:bg-red-500/20 disabled:opacity-50 transition-colors">
                       <StopCircle className="w-3 h-3" /> Stop
                     </button>
                   </div>

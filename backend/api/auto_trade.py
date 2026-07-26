@@ -121,7 +121,8 @@ _exec_gateway: ExecutionGateway | None = None
 _paper_broker: PaperBroker | None = None
 
 # Auto-analysis engine state
-_engine_running = False
+_analysis_enabled = False    # Authoritative user toggle (ON/OFF)
+_engine_running = False      # Background lifecycle task active
 _engine_paused = False
 _engine_state = "OFF"
 _engine_task: asyncio.Task | None = None
@@ -510,7 +511,7 @@ async def _handle_candle_closed(event: BusEvent):
     Signal suppression: candles with allow_signal_generation=false
     (e.g. warmup historical candles) do not trigger analysis.
     """
-    if not _engine_running or _engine_paused:
+    if not _engine_running or _engine_paused or not _analysis_enabled:
         return
 
     try:
@@ -1119,6 +1120,7 @@ def _build_workspace_snapshot(
             "state": _engine_state,
             "running": _engine_running,
             "paused": _engine_paused,
+            "analysis_enabled": _analysis_enabled,
             "mode": _get_runtime_mode(),
         },
         "readiness": _check_mandatory_systems(),
@@ -1216,6 +1218,7 @@ async def _engine_lifecycle():
 
     if not _zerodha_engine or not _zerodha_engine.is_ws_connected:
         _engine_state = ENGINE_STATE_ERROR
+        _engine_running = False
         log_error("AutoTrade: Zerodha engine failed to connect")
         return
 
@@ -1294,6 +1297,7 @@ async def auto_trade_workspace():
     result["engine"]["state"] = _engine_state
     result["engine"]["running"] = _engine_running
     result["engine"]["paused"] = _engine_paused
+    result["engine"]["analysis_enabled"] = _analysis_enabled
     result["engine"]["mode"] = _get_runtime_mode()
 
     # Provider info (always live, not cached)
@@ -1309,7 +1313,7 @@ async def auto_trade_start():
     Initializes Zerodha-backed analysis and returns initialization progress.
     Trade execution depends on runtime mode and all approval gates.
     """
-    global _engine_running, _engine_state, _engine_task, _health_watchdog_task
+    global _engine_running, _engine_state, _engine_task, _health_watchdog_task, _analysis_enabled
 
     async with _engine_lock:
         if _engine_running:
@@ -1327,6 +1331,7 @@ async def auto_trade_start():
         if not _zerodha_engine.is_running:
             await _zerodha_engine.start()
 
+        _analysis_enabled = True
         _engine_running = True
         _engine_paused = False
         _engine_state = ENGINE_STATE_AUTHENTICATING
@@ -1343,6 +1348,7 @@ async def auto_trade_start():
             "success": True,
             "state": _engine_state,
             "message": "Auto analysis engine starting with Zerodha Kite data",
+            "analysis_enabled": True,
             "provider": _get_zerodha_status_dict(),
         }
 
@@ -1350,9 +1356,10 @@ async def auto_trade_start():
 @router.post("/api/auto-trade/stop")
 async def auto_trade_stop():
     """Stop the auto analysis engine."""
-    global _engine_running, _engine_state, _engine_task, _health_watchdog_task
+    global _engine_running, _engine_state, _engine_task, _health_watchdog_task, _analysis_enabled
 
     async with _engine_lock:
+        _analysis_enabled = False
         _engine_running = False
         _engine_state = ENGINE_STATE_STOPPING
 
@@ -1373,7 +1380,7 @@ async def auto_trade_stop():
 
         _engine_state = ENGINE_STATE_OFF
         _record_audit("auto_trade_stopped", {"state": "OFF"})
-        return {"success": True, "state": "OFF", "message": "Auto analysis engine stopped"}
+        return {"success": True, "state": "OFF", "message": "Auto analysis engine stopped", "analysis_enabled": False}
 
 
 @router.post("/api/auto-trade/pause")
@@ -1410,6 +1417,7 @@ async def auto_trade_status():
             "running": _engine_running,
             "paused": _engine_paused,
             "state": _engine_state,
+            "analysis_enabled": _analysis_enabled,
             "mode": _get_runtime_mode(),
         },
         "provider": _get_zerodha_status_dict(),

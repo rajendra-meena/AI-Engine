@@ -7,6 +7,7 @@ export interface AutoTradeEngine {
   state: string
   running: boolean
   paused: boolean
+  analysis_enabled: boolean
   mode: string
 }
 
