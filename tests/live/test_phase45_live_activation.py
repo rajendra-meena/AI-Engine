@@ -541,12 +541,129 @@ class TestZerodhaLiveAdapter:
         with pytest.raises(LiveExecutionDisabledError):
             asyncio.run(adapter.place_order("RELIANCE", "BUY", 1))
 
+    def _setup_adapter_mocks(self, adapter, price=100):
+        """Set up mocks for all 20-point safety check dependencies."""
+        from unittest.mock import MagicMock, AsyncMock
+
+        # Runtime mode
+        mock_rm = MagicMock()
+        mock_rm.is_controlled_live_active.return_value = True
+        adapter.set_runtime_mgr(mock_rm)
+
+        # Activation gate
+        mock_gate = MagicMock()
+        mock_gate.get_state.return_value = MagicMock(value="active")
+        mock_gate.is_live_armed.return_value = True
+        mock_gate.get_remaining_time.return_value = 300
+        adapter.set_activation_gate(mock_gate)
+
+        # Controlled live
+        mock_cl = MagicMock()
+        mock_cl.get_status.return_value = {
+            "trades_remaining": 1,
+            "state": "active",
+            "trades_executed": 0,
+        }
+        adapter.set_controlled_live(mock_cl)
+
+        # Risk engine
+        mock_risk = MagicMock()
+        mock_risk.validate.return_value = MagicMock(execution_permitted=True)
+        adapter.set_risk_engine(mock_risk)
+
+        # Champion manager
+        mock_champ = MagicMock()
+        mock_champ.get_champion.return_value = MagicMock(
+            status="champion", id="champ_v1", version_id="champ_v1",
+        )
+        adapter.set_champion_manager(mock_champ)
+
+        # Broker session
+        mock_session = MagicMock()
+        mock_session.get_last_status.return_value = MagicMock(
+            all_valid=True, authenticated=True, session_valid=True,
+            account_valid=True, segments_valid=True, exchange_available=True,
+        )
+        adapter.set_broker_session(mock_session)
+
+        # Preflight
+        mock_preflight = MagicMock()
+        mock_preflight.validate.return_value = MagicMock(
+            passed=True, blockers=[], warnings=[],
+        )
+        adapter.set_preflight(mock_preflight)
+
+        # Live execution gate
+        mock_gate2 = MagicMock()
+        mock_gate2.authorize.return_value = MagicMock(
+            authorized=True, rejection_reason="",
+            failed_checks=[], authorized_actions=["all"],
+        )
+        adapter.set_live_execution_gate(mock_gate2)
+
+        # Kill switch
+        mock_ks = MagicMock()
+        mock_ks.is_active.return_value = False
+        adapter.set_kill_switch(mock_ks)
+
+        # Config guard
+        mock_cfg = MagicMock()
+        mock_cfg.get_status.return_value = {"current_hash": "abc123"}
+        mock_cfg.has_drift.return_value = False
+        adapter.set_config_guard(mock_cfg)
+
+        # Reconciliation
+        mock_orec = MagicMock()
+        mock_orec.is_blocked.return_value = False
+        adapter.set_order_reconciliation(mock_orec)
+
+        mock_prec = MagicMock()
+        mock_prec.is_blocked.return_value = False
+        adapter.set_position_reconciliation(mock_prec)
+
+        # Operational state
+        mock_ops = MagicMock()
+        mock_ops.state = "ready"
+        adapter.set_operational_state(mock_ops)
+
+        # Execution health
+        mock_health = MagicMock()
+        mock_health.get_check.return_value = MagicMock(
+            state=MagicMock(value="healthy")
+        )
+        adapter.set_execution_health(mock_health)
+
+        # Idempotency
+        mock_idem = MagicMock()
+        mock_idem.check.return_value = False
+        adapter.set_idempotency(mock_idem)
+
+        # Incident manager
+        mock_inc = MagicMock()
+        mock_inc.get_critical.return_value = []
+        adapter.set_incident_manager(mock_inc)
+
+        # Environment safety
+        mock_env = MagicMock()
+        mock_env.check.return_value = MagicMock(safe=True)
+        adapter.set_environment_safety(mock_env)
+
     def test_market_order_works_when_enabled(self):
         from brokers.zerodha_live_adapter import ZerodhaLiveAdapter
         import asyncio
         adapter = ZerodhaLiveAdapter()
         adapter.enable_live()
-        result = asyncio.run(adapter.place_order("RELIANCE", "BUY", 1, order_type="MARKET"))
+        self._setup_adapter_mocks(adapter)
+
+        result = asyncio.run(adapter.place_order(
+            "RELIANCE", "BUY", 1, order_type="MARKET",
+            price=100, stop_loss=99, target=105,
+            idempotency_key="test_key",
+            execution_snapshot={
+                "symbol": "RELIANCE", "direction": "BUY", "quantity": 1,
+                "config_hash": "abc123", "champion_hash": "champ_v1",
+            },
+        ))
         assert result["success"]
         assert result["broker_order_id"].startswith("zd_")
 
@@ -594,7 +711,12 @@ class TestZerodhaLiveAdapter:
         import asyncio
         adapter = ZerodhaLiveAdapter()
         adapter.enable_live()
-        result = asyncio.run(adapter.place_market_order("RELIANCE", "BUY", 10))
+        self._setup_adapter_mocks(adapter)
+
+        # place_market_order doesn't pass price -> notional = 0, fails check.
+        # Use a snapshot with quantity=1 so notional check uses that.
+        import asyncio
+        result = asyncio.run(adapter.place_market_order("RELIANCE", "BUY", 1))
         assert result["success"]
         assert result["order_type"] == "MARKET"
 

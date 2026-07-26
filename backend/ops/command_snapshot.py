@@ -309,6 +309,57 @@ class MetricsSnapshot:
 
 
 @dataclass
+class RealLiveSnapshot:
+    """Phase 55: Real live status for controlled live execution."""
+    controlled_live_active: bool = False
+    authorization_status: str = ""
+    authorization_expiry: str = ""
+    trades_remaining: int = 0
+    max_quantity: int = 1
+    max_notional: int = 10000
+    current_symbol: str = ""
+    current_position: str = ""
+    current_pnl: float = 0.0
+    broker_status: str = ""
+    order_status: str = ""
+    reconciliation_status: str = ""
+    sl_status: str = ""
+    target_status: str = ""
+    protective_order_status: str = "not_verified"
+    kill_switch: bool = False
+    incident_status: str = ""
+    post_trade_evaluation: dict[str, Any] = field(default_factory=dict)
+    next_authorization_required: bool = True
+    real_money_warning: str = "🔴 REAL MONEY — CONTROLLED LIVE"
+    one_trade_warning: str = "⚠️ ONE LIVE TRADE AUTHORIZED"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "controlled_live_active": self.controlled_live_active,
+            "authorization_status": self.authorization_status,
+            "authorization_expiry": self.authorization_expiry,
+            "trades_remaining": self.trades_remaining,
+            "max_quantity": self.max_quantity,
+            "max_notional": self.max_notional,
+            "current_symbol": self.current_symbol,
+            "current_position": self.current_position,
+            "current_pnl": round(self.current_pnl, 2),
+            "broker_status": self.broker_status,
+            "order_status": self.order_status,
+            "reconciliation_status": self.reconciliation_status,
+            "sl_status": self.sl_status,
+            "target_status": self.target_status,
+            "protective_order_status": self.protective_order_status,
+            "kill_switch": self.kill_switch,
+            "incident_status": self.incident_status,
+            "post_trade_evaluation": self.post_trade_evaluation,
+            "next_authorization_required": self.next_authorization_required,
+            "real_money_warning": self.real_money_warning,
+            "one_trade_warning": self.one_trade_warning,
+        }
+
+
+@dataclass
 class CommandCenterSnapshot:
     """Unified immutable system state snapshot."""
     snapshot_id: str = field(default_factory=lambda: f"snap_{uuid.uuid4().hex[:12]}")
@@ -333,6 +384,7 @@ class CommandCenterSnapshot:
     safety: SafetySnapshot = field(default_factory=SafetySnapshot)
     approval: ApprovalSnapshot = field(default_factory=ApprovalSnapshot)
     metrics: MetricsSnapshot = field(default_factory=MetricsSnapshot)
+    real_live: RealLiveSnapshot = field(default_factory=RealLiveSnapshot)
 
     @property
     def snapshot_age(self) -> float:
@@ -367,4 +419,5 @@ class CommandCenterSnapshot:
             "safety": self.safety.to_dict(),
             "approval": self.approval.to_dict(),
             "metrics": self.metrics.to_dict(),
+            "real_live": self.real_live.to_dict(),
         }

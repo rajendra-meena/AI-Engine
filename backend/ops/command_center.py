@@ -14,7 +14,7 @@ from ops.command_snapshot import (
     ExecutionSnapshot, PositionSnapshot, RiskSnapshot, CanarySnapshot,
     RolloutSnapshot, ReconciliationSnapshot, IncidentSummarySnapshot,
     RecoverySnapshot, IntegritySnapshot, SafetySnapshot, ApprovalSnapshot,
-    MetricsSnapshot, UnifiedStatus, UNIFIED_STATUS_PRIORITY,
+    MetricsSnapshot, RealLiveSnapshot, UnifiedStatus, UNIFIED_STATUS_PRIORITY,
 )
 
 
@@ -51,6 +51,7 @@ class CommandCenterEngine:
         self._metrics = None
         self._risk_engine = None
         self._champion_manager = None
+        self._controlled_live = None
 
     # ── DI Setters ──
 
@@ -72,6 +73,7 @@ class CommandCenterEngine:
     def set_metrics(self, m): self._metrics = m
     def set_risk_engine(self, r): self._risk_engine = r
     def set_champion_manager(self, c): self._champion_manager = c
+    def set_controlled_live(self, c): self._controlled_live = c
 
     # ── Snapshot Builder ──
 
@@ -95,6 +97,7 @@ class CommandCenterEngine:
         snap.safety = self._build_safety()
         snap.approval = self._build_approval()
         snap.metrics = self._build_metrics()
+        snap.real_live = self._build_real_live()
         snap.unified_status = self._compute_unified_status(snap)
 
         return snap
@@ -373,6 +376,63 @@ class CommandCenterEngine:
             except Exception:
                 pass
         return m
+
+    def _build_real_live(self) -> RealLiveSnapshot:
+        """Phase 55: Build real live status snapshot."""
+        rl = RealLiveSnapshot()
+
+        if self._controlled_live:
+            try:
+                status = self._controlled_live.get_status()
+                rl.controlled_live_active = status.get("state") == "active"
+                rl.trades_remaining = status.get("trades_remaining", 0)
+                rl.current_symbol = status.get("execution_snapshot", {}).get("symbol", "")
+                rl.broker_status = status.get("broker_status", "")
+                rl.order_status = status.get("broker_status", "")
+                rl.reconciliation_status = (
+                    "reconciled" if status.get("position_reconciled") else "pending"
+                )
+                rl.protective_order_status = status.get("protective_order_status", "not_verified")
+                rl.sl_status = "present" if status.get("execution_snapshot", {}).get("stop_loss") else "missing"
+                rl.target_status = "present" if status.get("execution_snapshot", {}).get("target") else "missing"
+
+                # Post-trade evaluation
+                try:
+                    post = self._controlled_live.get_post_trade_evaluation()
+                    rl.post_trade_evaluation = post
+                except Exception:
+                    pass
+
+                # Authorization info
+                try:
+                    real = self._controlled_live.get_real_status()
+                    rl.authorization_status = real.get("state", "")
+                    rl.authorization_expiry = real.get("completed_at", "")
+                except Exception:
+                    pass
+
+                rl.next_authorization_required = rl.trades_remaining <= 0
+            except Exception:
+                pass
+
+        # Kill switch check
+        if self._activation_gate:
+            try:
+                gate_status = self._activation_gate.get_status()
+                rl.kill_switch = gate_status.get("state") in ("kill_switched",)
+            except Exception:
+                pass
+
+        # Incident check
+        if self._incident_mgr:
+            try:
+                open_incidents = self._incident_mgr.get_open()
+                if open_incidents:
+                    rl.incident_status = f"{len(open_incidents)} open incidents"
+            except Exception:
+                pass
+
+        return rl
 
     # ── Section Builders (for per-section API endpoints) ──
 

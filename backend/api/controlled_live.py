@@ -1,6 +1,7 @@
-"""Controlled Live API — Phase 54 one-trade controlled live execution.
+"""Controlled Live API — Phase 55 one-trade controlled live execution.
 
 All safety decisions are server-side. No unrestricted live endpoints.
+Phase 55 adds: real-status, order, position, protection, post-trade endpoints.
 """
 
 from __future__ import annotations
@@ -33,6 +34,12 @@ async def controlled_status():
     return _get().get_status()
 
 
+@router.get("/api/live/controlled/real-status")
+async def controlled_real_status():
+    """Phase 55: Get real live status with warnings."""
+    return _get().get_real_status()
+
+
 @router.get("/api/live/controlled/preflight")
 async def controlled_preflight():
     """Get preflight status."""
@@ -47,18 +54,37 @@ async def controlled_execution():
 
 @router.get("/api/live/controlled/order")
 async def controlled_order():
-    """Get order status."""
+    """Phase 55: Get order status."""
     status = _get().get_status()
     return {
         "broker_order_id": status.get("broker_order_id", ""),
         "broker_status": status.get("broker_status", ""),
+        "order_reconciled": status.get("order_reconciled", False),
+        "position_reconciled": status.get("position_reconciled", False),
     }
 
 
 @router.get("/api/live/controlled/position")
 async def controlled_position():
-    """Get position status."""
-    return {"status": "position_monitoring"}
+    """Phase 55: Get position monitoring status."""
+    status = _get().get_status()
+    return {
+        "state": status.get("state", ""),
+        "position_reconciled": status.get("position_reconciled", False),
+        "protective_order_status": status.get("protective_order_status", "not_verified"),
+    }
+
+
+@router.get("/api/live/controlled/protection")
+async def controlled_protection():
+    """Phase 55: Get protective order (SL/Target) status."""
+    return _get().get_protection_status()
+
+
+@router.get("/api/live/controlled/post-trade")
+async def controlled_post_trade():
+    """Phase 55: Get post-trade evaluation results."""
+    return _get().get_post_trade_evaluation()
 
 
 @router.get("/api/live/controlled/reconciliation")
@@ -75,8 +101,8 @@ async def controlled_risk():
 
 @router.get("/api/live/controlled/audit")
 async def controlled_audit():
-    """Get audit events."""
-    return {"events": []}
+    """Phase 55: Get audit events."""
+    return {"events": _get().get_audit_events(limit=100)}
 
 
 # ── Actions ──
@@ -86,6 +112,7 @@ async def controlled_audit():
 async def controlled_activate(reviewer: str = "", reason: str = ""):
     """Activate controlled live mode.
 
+    Phase 55: Also validates environment safety before activating.
     Requires human reviewer + reason.
     Validates all prerequisites before activating.
     One trade maximum per activation.
@@ -96,6 +123,15 @@ async def controlled_activate(reviewer: str = "", reason: str = ""):
     return result
 
 
+@router.post("/api/live/controlled/authorize")
+async def controlled_authorize(reviewer: str = "", reason: str = ""):
+    """Phase 55: Create a new authorization for controlled live.
+
+    Alias for activate with stronger semantics.
+    """
+    return await controlled_activate(reviewer=reviewer, reason=reason)
+
+
 @router.post("/api/live/controlled/execute")
 async def controlled_execute(
     symbol: str = "", side: str = "BUY", quantity: int = 0,
@@ -104,9 +140,18 @@ async def controlled_execute(
 ):
     """Execute one controlled live trade through all safety gates.
 
+    Phase 55: Server-side hard limits always enforced.
+    Frontend values cannot override safety limits.
+
     After execution: trades_remaining becomes 0.
     New activation required for another trade.
     """
+    # Phase 55: Server-side limit enforcement (never trust frontend)
+    if quantity > 1:
+        raise HTTPException(status_code=400, detail="Quantity cannot exceed 1")
+    if price and (price * quantity) > 10000:
+        raise HTTPException(status_code=400, detail="Notional value cannot exceed ₹10,000")
+
     result = await _get().execute_trade(
         symbol=symbol, side=side, quantity=quantity,
         price=price, stop_loss=stop_loss, target=target,
@@ -132,5 +177,5 @@ async def controlled_stop(reviewer: str = "", reason: str = ""):
 
 @router.post("/api/live/controlled/reconcile")
 async def controlled_reconcile():
-    """Run reconciliation."""
+    """Phase 55: Run reconciliation."""
     return await _get().reconcile()

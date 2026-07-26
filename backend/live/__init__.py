@@ -59,7 +59,20 @@ from live.rollout_monitor import RolloutPerformanceMonitor, PerformanceSnapshot
 from live.rollback_controller import RollbackController, RollbackCheckResult, RollbackExecutionResult
 from live.progressive_rollout import ProgressiveRolloutEngine, ProgressiveRolloutError
 from live.execution_controller import Phase46ExecutionController, ExecutionResult
-from live.controlled_live_integration import ControlledLiveIntegration, ControlledLiveState, LiveExecutionRecord, MAX_TRADES_PER_SESSION, MAX_QUANTITY, MAX_NOTIONAL
+from live.controlled_live_integration import (
+    ControlledLiveIntegration, ControlledLiveState, LiveExecutionRecord,
+    ExecutionSnapshot, MAX_TRADES_PER_SESSION, MAX_QUANTITY, MAX_NOTIONAL,
+    ProtectiveOrderStatus,
+    AUTHORIZATION_CREATED, AUTHORIZATION_APPROVED,
+    LIVE_PRECHECK_STARTED, LIVE_PRECHECK_PASSED,
+    LIVE_EXECUTION_STARTED, LIVE_ORDER_SUBMITTED,
+    LIVE_ORDER_ACKNOWLEDGED, LIVE_ORDER_REJECTED, LIVE_ORDER_UNKNOWN,
+    LIVE_ORDER_RECONCILED, LIVE_POSITION_RECONCILED,
+    LIVE_TRADE_COMPLETED, LIVE_ENTRY_REBLOCKED,
+    POST_TRADE_EVALUATION_STARTED, POST_TRADE_EVALUATION_COMPLETED,
+    HUMAN_REVIEW_REQUIRED,
+)
+from live.environment_safety import EnvironmentSafety, EnvironmentSafetyResult, EnvironmentSafetyError
 
 __all__ = [
     "PreLiveCheck", "PreLiveValidationReport",
@@ -104,5 +117,16 @@ __all__ = [
     "RolloutGovernanceEngine",
     "Phase46ExecutionController", "ExecutionResult",
     "ControlledLiveIntegration", "ControlledLiveState", "LiveExecutionRecord",
+    "ExecutionSnapshot",
     "MAX_TRADES_PER_SESSION", "MAX_QUANTITY", "MAX_NOTIONAL",
+    "ProtectiveOrderStatus",
+    "AUTHORIZATION_CREATED", "AUTHORIZATION_APPROVED",
+    "LIVE_PRECHECK_STARTED", "LIVE_PRECHECK_PASSED",
+    "LIVE_EXECUTION_STARTED", "LIVE_ORDER_SUBMITTED",
+    "LIVE_ORDER_ACKNOWLEDGED", "LIVE_ORDER_REJECTED", "LIVE_ORDER_UNKNOWN",
+    "LIVE_ORDER_RECONCILED", "LIVE_POSITION_RECONCILED",
+    "LIVE_TRADE_COMPLETED", "LIVE_ENTRY_REBLOCKED",
+    "POST_TRADE_EVALUATION_STARTED", "POST_TRADE_EVALUATION_COMPLETED",
+    "HUMAN_REVIEW_REQUIRED",
+    "EnvironmentSafety", "EnvironmentSafetyResult", "EnvironmentSafetyError",
 ]
