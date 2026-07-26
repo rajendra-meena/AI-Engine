@@ -107,7 +107,6 @@ async def controlled_execute(
     After execution: trades_remaining becomes 0.
     New activation required for another trade.
     """
-    import asyncio
     result = await _get().execute_trade(
         symbol=symbol, side=side, quantity=quantity,
         price=price, stop_loss=stop_loss, target=target,
@@ -125,7 +124,6 @@ async def controlled_stop(reviewer: str = "", reason: str = ""):
     Blocks entries, cancels orders, creates incident.
     Requires human recovery.
     """
-    import asyncio
     result = await _get().emergency_stop(reviewer=reviewer, reason=reason)
     if not result.get("success"):
         raise HTTPException(status_code=400, detail=result.get("error", "Stop failed"))
@@ -135,5 +133,4 @@ async def controlled_stop(reviewer: str = "", reason: str = ""):
 @router.post("/api/live/controlled/reconcile")
 async def controlled_reconcile():
     """Run reconciliation."""
-    import asyncio
     return await _get().reconcile()

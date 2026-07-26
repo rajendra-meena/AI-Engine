@@ -40,10 +40,9 @@ class RuntimeModeManager:
         except ValueError:
             return {"success": False, "message": f"Unknown mode: {mode}"}
 
-        if new_mode not in ALLOWED_MODES and new_mode != RuntimeMode.PAPER:
-            # CONTROLLED_LIVE is set via dedicated method
-            if new_mode == RuntimeMode.CONTROLLED_LIVE:
-                return {"success": False, "message": "Use activate_controlled_live() to enable controlled live mode"}
+        if new_mode == RuntimeMode.CONTROLLED_LIVE:
+            return {"success": False, "message": "Use activate_controlled_live() to enable controlled live mode"}
+        if new_mode not in ALLOWED_MODES:
             return {"success": False, "message": f"Mode '{mode}' is disabled in this phase"}
 
         self._mode = new_mode

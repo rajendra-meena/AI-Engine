@@ -7,7 +7,6 @@ Auto re-blocks after completion. No automatic second trade.
 from __future__ import annotations
 
 import uuid
-import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -157,8 +156,8 @@ class ControlledLiveIntegration:
     def set_execution_gateway(self, g): self._execution_gateway = g
     def set_broker(self, b): self._broker = b
     def set_preflight(self, p): self._preflight = p
-    def set_execution_limits(self, l): self._execution_limits = l
-    def set_idempotency(self, i): self._idempotency = i
+    def set_execution_limits(self, limiter): self._execution_limits = limiter
+    def set_idempotency(self, mgr): self._idempotency = mgr
     def set_order_reconciliation(self, r): self._order_reconciliation = r
     def set_position_reconciliation(self, r): self._position_reconciliation = r
     def set_emergency_cancel(self, e): self._emergency_cancel = e
@@ -183,8 +182,10 @@ class ControlledLiveIntegration:
         if not reason:
             return {"success": False, "error": "Reason is required"}
 
-        if self._record.state not in (ControlledLiveState.INACTIVE, ControlledLiveState.COMPLETED,
-                                       ControlledLiveState.STOPPED, ControlledLiveState.FAILED):
+        if self._record.state not in (
+            ControlledLiveState.INACTIVE, ControlledLiveState.COMPLETED,
+            ControlledLiveState.STOPPED, ControlledLiveState.FAILED,
+        ):
             return {"success": False, "error": f"Cannot activate from state {self._record.state}"}
 
         # Check Phase 43 lock
