@@ -297,20 +297,16 @@ class ZerodhaMarketDataEngine:
             await self._subscribe_default_universe()
 
             # Step 4b: Historical indicator warmup (pre-fetch via Kite API)
-            # Uses the states LOADING_HISTORY and WARMING_INDICATORS.
-            # If Kite historical data is unavailable, transition to BLOCKED — never use Yahoo fallback.
+            # Runs in background — engine transitions to WAITING_FOR_LIVE_TICKS immediately
+            # so the auto-trade lifecycle doesn't block on warmup completion.
             if self._warmup_engine and self._warmup_engine.is_kite_available():
-                await self._run_warmup_after_subscribe()
+                # Fire-and-forget warmup in background
+                asyncio.ensure_future(self._run_warmup_after_subscribe())
             else:
-                log_error("ZerodhaMarketDataEngine: Kite historical data unavailable — Auto Trade cannot warm up")
-                self._set_state(STATE_BLOCKED)
-                await self._publish_event(MARKET_DATA_ENGINE_ERROR, {
-                    "error": "Kite historical data unavailable, warmup required. Auto Trade blocked."
-                })
-                return  # Exit — engine cannot proceed without warmup
+                log_warn("ZerodhaMarketDataEngine: Kite warmup unavailable — indicators will warm up from live data")
 
-            # Step 5: After warmup, transition to WAITING_FOR_LIVE_TICKS (NOT CONNECTED as analysis-ready)
-            # warmup completed to CONNECTED; now wait for first exchange tick
+            # Step 5: Transition to WAITING_FOR_LIVE_TICKS immediately
+            # Warmup runs in background; live ticks will fill indicators naturally.
             self._set_state(STATE_WAITING_FOR_LIVE_TICKS)
 
             # Step 6: Start background tasks
