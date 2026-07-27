@@ -521,6 +521,7 @@ async def _handle_candle_closed(event: BusEvent):
     Signal suppression: candles with allow_signal_generation=false
     (e.g. warmup historical candles) do not trigger analysis.
     """
+    global _engine_state
     if not _engine_running or _engine_paused or not _analysis_enabled:
         return
 
@@ -1006,6 +1007,7 @@ async def _health_watchdog_loop():
     This loop verifies engine health, checks for stale data conditions,
     and transitions states as needed.
     """
+    global _engine_state
     while _engine_running:
         try:
             await asyncio.sleep(30)
