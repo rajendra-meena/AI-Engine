@@ -127,6 +127,7 @@ _analysis_enabled = False    # Authoritative user toggle (ON/OFF)
 _engine_running = False      # Background lifecycle task active
 _engine_paused = False
 _engine_state = "OFF"
+_auto_execute_paper = False  # Persisted user setting: auto-execute paper trades
 _engine_task: asyncio.Task | None = None
 _engine_lock = asyncio.Lock()
 _last_workspace_snapshot: dict[str, Any] | None = None
@@ -1332,6 +1333,7 @@ async def auto_trade_workspace():
     result["engine"]["paused"] = _engine_paused
     result["engine"]["analysis_enabled"] = _analysis_enabled
     result["engine"]["mode"] = _get_runtime_mode()
+    result["engine"]["auto_execute_paper"] = _auto_execute_paper
 
     # Provider info (always live, not cached)
     result["provider"] = _get_zerodha_status_dict()
@@ -1441,6 +1443,22 @@ async def auto_trade_resume():
     return {"success": True, "state": "SCANNING", "message": "Auto analysis engine resumed"}
 
 
+@router.post("/api/auto-trade/settings")
+async def auto_trade_settings(payload: dict):
+    """Update auto-trade user settings.
+
+    Persisted settings survive page refresh:
+    - auto_execute_paper: bool — automatically execute paper trades
+    """
+    global _auto_execute_paper
+
+    if "auto_execute_paper" in payload:
+        _auto_execute_paper = bool(payload["auto_execute_paper"])
+        log_info("AutoTrade: setting updated", auto_execute_paper=_auto_execute_paper)
+
+    return {"success": True, "auto_execute_paper": _auto_execute_paper}
+
+
 @router.get("/api/auto-trade/status")
 async def auto_trade_status():
     """Get auto-trade engine status with Zerodha provider info."""
@@ -1451,6 +1469,7 @@ async def auto_trade_status():
             "state": _engine_state,
             "analysis_enabled": _analysis_enabled,
             "mode": _get_runtime_mode(),
+            "auto_execute_paper": _auto_execute_paper,
         },
         "provider": _get_zerodha_status_dict(),
         "readiness": _check_mandatory_systems(),

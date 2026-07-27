@@ -9,6 +9,7 @@ export interface AutoTradeEngine {
   paused: boolean
   analysis_enabled: boolean
   mode: string
+  auto_execute_paper?: boolean
 }
 
 export interface ReadinessCheck {
@@ -141,6 +142,16 @@ class AutoTradeService {
   async getStatus(): Promise<{ engine: AutoTradeEngine; readiness: ReadinessCheck }> {
     const res = await fetch(`${this.base}/api/auto-trade/status`)
     if (!res.ok) throw new Error("Failed to fetch engine status")
+    return res.json()
+  }
+
+  async updateSettings(settings: Record<string, any>): Promise<any> {
+    const res = await fetch(`${this.base}/api/auto-trade/settings`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(settings),
+    })
+    if (!res.ok) throw new Error("Failed to update settings")
     return res.json()
   }
 }

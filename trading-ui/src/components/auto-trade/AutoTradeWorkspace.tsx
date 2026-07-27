@@ -199,6 +199,13 @@ export function AutoTradeWorkspace() {
   const [allowSell, setAllowSell] = useState(true)
   const [autoExecutePaper, setAutoExecutePaper] = useState(false)
 
+  // Sync autoExecutePaper from backend workspace response (persisted setting)
+  useEffect(() => {
+    if (workspace?.engine?.auto_execute_paper !== undefined) {
+      setAutoExecutePaper(workspace.engine.auto_execute_paper)
+    }
+  }, [workspace?.engine?.auto_execute_paper])
+
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   /* ════════════════ Data Fetching ════════════════ */
@@ -556,7 +563,13 @@ export function AutoTradeWorkspace() {
                 {tradingMode === "paper" && (
                   <div className="flex items-center justify-between pt-1 border-t">
                     <label className="text-[10px] text-muted-foreground">Auto Execute Paper Trades</label>
-                    <button onClick={() => setAutoExecutePaper(!autoExecutePaper)} className={cn("w-8 h-4 rounded-full transition-colors", autoExecutePaper ? "bg-emerald-500" : "bg-muted")}>
+                    <button onClick={async () => {
+                      const newVal = !autoExecutePaper;
+                      setAutoExecutePaper(newVal);
+                      try {
+                        await autoTradeService.updateSettings({ auto_execute_paper: newVal });
+                      } catch { /* ignore */ }
+                    }} className={cn("w-8 h-4 rounded-full transition-colors", autoExecutePaper ? "bg-emerald-500" : "bg-muted")}>
                       <div className={cn("w-3 h-3 rounded-full bg-white transition-transform", autoExecutePaper ? "translate-x-4" : "translate-x-0.5")} />
                     </button>
                   </div>
