@@ -100,6 +100,8 @@ class ExecutionRecord:
     safety_checks: dict[str, Any] = field(default_factory=dict)
     created_at: str = ""
     updated_at: str = ""
+    decision_id: str = ""
+    analysis_cycle_id: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -398,18 +400,26 @@ class ExecutionGateway:
             trade_plan_id=record.trade_plan_id,
             trace_id=record.trace_id,
             execution_id=record.execution_id,
+            # Decision traceability
+            decision_id=record.decision_id,
+            analysis_cycle_id=record.analysis_cycle_id,
+            source_provider="ZERODHA_KITE",
         )
         return result
 
-    # ── Live execution (placeholder for Zerodha integration) ──
+    # ── Live execution (locked — no real order placement) ──
 
     def _live_execute(self, record: ExecutionRecord) -> dict[str, Any]:
-        log_info("Execution: LIVE execute", symbol=record.symbol, side=record.side, qty=record.quantity)
+        """
+        Live execution is intentionally blocked.
+        Real broker integration requires controlled-live activation.
+        """
+        log_warn("Execution: LIVE mode called but live execution is not implemented",
+                 symbol=record.symbol, side=record.side, qty=record.quantity)
         return {
-            "success": True,
-            "price": record.requested_price or 0,
-            "broker_order_id": "",
-            "status": "submitted",
+            "success": False,
+            "status": "LIVE_EXECUTION_NOT_IMPLEMENTED",
+            "reason": "Live execution is not implemented. Use PAPER mode or complete controlled-live integration.",
         }
 
     # ── Audit ──

@@ -33,6 +33,7 @@ Safety-critical:
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 import uuid
 from datetime import datetime, timezone
@@ -84,6 +85,7 @@ from execution.execution_audit import ExecutionAuditLog
 from execution.gateway import ExecutionGateway
 from execution.paper_broker import PaperBroker
 from trading.runtime_mode import RuntimeModeManager
+from trading.market_session import check_session, is_force_exit_time, MarketSessionConfig, DEFAULT_SESSION_CONFIG
 from services.market_data_service import MarketDataService
 from services.zerodha_market_data_engine import ZerodhaMarketDataEngine
 from utils.logger import log_info, log_warn, log_error
@@ -395,7 +397,15 @@ def _check_mandatory_systems() -> dict[str, str]:
     # — Phase 43 lock —
     checks["phase_43_lock"] = R.READY
 
-    # — Yahoo Finance blocked for Auto Trade —
+    # — Data source is ZERODHA_KITE (never mock/yahoo) —
+    data_provider = os.getenv("AUTO_TRADE_MARKET_DATA_PROVIDER", "").upper()
+    if data_provider == "ZERODHA_KITE" and _zerodha_engine:
+        checks["data_source"] = R.READY
+    elif data_provider == "MOCK":
+        checks["data_source"] = R.BLOCKED
+        log_warn("AutoTrade: MOCK data provider configured — blocking trades")
+    else:
+        checks["data_source"] = R.BLOCKED
     checks["yahoo_fallback_blocked"] = R.READY
 
     # Validate all statuses are canonical
@@ -829,6 +839,13 @@ async def _try_execute_trade(
     if runtime_mode not in ("observe", "shadow", "paper"):
         log_info("AutoTrade: execution blocked by runtime mode", mode=runtime_mode, symbol=symbol)
         return None
+
+    # Session safety check — enforce market hours, opening window, entry cutoff
+    session = check_session()
+    if not session.can_trade:
+        log_info("AutoTrade: execution blocked by session rules",
+                 symbol=symbol, code=session.code, reason=session.reason)
+        return {"status": "blocked", "code": session.code, "reason": session.reason}
 
     # Kill switch check
     if _kill_switch:

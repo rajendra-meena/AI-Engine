@@ -216,13 +216,47 @@ class OrderManager:
             raise KiteOrderError(f"Get positions failed: {e}") from e
 
     def exit_position(self, tradingsymbol: str, exchange: str = "NSE") -> dict[str, Any]:
-        """Exit an open position."""
+        """
+        Exit an open position by placing an opposite market order.
+        Note: kite.exit_order() is for CO orders only — this places a real
+        opposite-market order to close the position.
+        Currently blocked in production; only used in paper/shadow mode.
+        """
         if not self._kite:
             raise KiteOrderError("Kite not connected")
         try:
-            self._kite.exit_position(tradingsymbol=tradingsymbol, exchange=exchange)
-            log_info("OrderManager: position exited", symbol=tradingsymbol)
-            return {"success": True, "symbol": tradingsymbol}
+            # Get current position to determine direction and quantity
+            positions_raw = self._kite.positions()
+            pos = None
+            for ptype in ("net", "day"):
+                for p in positions_raw.get(ptype, []):
+                    if p.get("tradingsymbol") == tradingsymbol and p.get("exchange") == exchange:
+                        pos = p
+                        break
+            if not pos:
+                raise KiteOrderError(f"No open position found for {tradingsymbol}")
+
+            quantity = abs(int(pos.get("quantity", 0)))
+            if quantity <= 0:
+                raise KiteOrderError(f"Zero quantity for {tradingsymbol}")
+
+            tx_type = "SELL" if int(pos.get("quantity", 0)) > 0 else "BUY"
+            product = pos.get("product", "MIS")
+
+            order = self._kite.place_order(
+                variety="regular",
+                exchange=exchange,
+                tradingsymbol=tradingsymbol,
+                transaction_type=tx_type,
+                quantity=quantity,
+                product=product,
+                order_type="MARKET",
+            )
+            log_info("OrderManager: exit order placed", symbol=tradingsymbol,
+                     order_id=order, direction=tx_type, qty=quantity)
+            return {"success": True, "order_id": order, "symbol": tradingsymbol}
+        except KiteOrderError:
+            raise
         except Exception as e:
             log_error("OrderManager: exit position failed", symbol=tradingsymbol, error=str(e))
             raise KiteOrderError(f"Exit position failed: {e}") from e
@@ -299,12 +333,12 @@ class OrderManager:
             log_error("OrderManager: get trades failed", error=str(e))
             raise KiteOrderError(f"Get trades failed: {e}") from e
 
-    def get_position_trades(self, tradingsymbol: str, exchange: str = "NSE") -> list[dict[str, Any]]:
-        """Get trades for a specific position."""
+    def get_trades_for_order(self, order_id: str) -> list[dict[str, Any]]:
+        """Get trades for a specific order via kite.order_trades()."""
         if not self._kite:
             raise KiteOrderError("Kite not connected")
         try:
-            return self._kite.position_trades(tradingsymbol=tradingsymbol, exchange=exchange)
+            return self._kite.order_trades(order_id)
         except Exception as e:
-            log_error("OrderManager: position trades failed", symbol=tradingsymbol, error=str(e))
-            raise KiteOrderError(f"Position trades failed: {e}") from e
+            log_error("OrderManager: order trades failed", order_id=order_id, error=str(e))
+            raise KiteOrderError(f"Order trades failed: {e}") from e

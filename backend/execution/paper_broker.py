@@ -98,8 +98,21 @@ class PaperPosition:
     created_at: str = ""
     exit_reason: str | None = None
 
-    def to_dict(self) -> dict[str, Any]:
-        return {
+    # Decision traceability
+    decision_id: str = ""
+    analysis_cycle_id: str = ""
+    candle_version: str = ""
+    strategy_version: str = "1.0"
+    ai_direction: str = ""
+    ai_confidence: float = 0.0
+    opportunity_score: float = 0.0
+    source_provider: str = ""
+    instrument_token: int = 0
+    data_timestamp: str = ""
+    entry_reason: str = ""
+
+    def to_dict(self, include_diagnostics: bool = False) -> dict[str, Any]:
+        d = {
             "trade_id": self.trade_id,
             "symbol": self.symbol,
             "direction": self.direction,
@@ -112,6 +125,21 @@ class PaperPosition:
             "realized_pnl": round(self.realized_pnl, 2),
             "created_at": self.created_at,
         }
+        if include_diagnostics:
+            d.update({
+                "decision_id": self.decision_id,
+                "analysis_cycle_id": self.analysis_cycle_id,
+                "candle_version": self.candle_version,
+                "strategy_version": self.strategy_version,
+                "ai_direction": self.ai_direction,
+                "ai_confidence": self.ai_confidence,
+                "opportunity_score": self.opportunity_score,
+                "source_provider": self.source_provider,
+                "instrument_token": self.instrument_token,
+                "data_timestamp": self.data_timestamp,
+                "entry_reason": self.entry_reason,
+            })
+        return d
 
 
 class PaperBroker:
@@ -195,6 +223,18 @@ class PaperBroker:
         trade_plan_id: str = "",
         trace_id: str = "",
         execution_id: str = "",
+        # Decision traceability fields
+        decision_id: str = "",
+        analysis_cycle_id: str = "",
+        candle_version: str = "",
+        strategy_version: str = "",
+        ai_direction: str = "",
+        ai_confidence: float = 0.0,
+        opportunity_score: float = 0.0,
+        source_provider: str = "",
+        instrument_token: int = 0,
+        data_timestamp: str = "",
+        entry_reason: str = "",
     ) -> dict[str, Any]:
         """Execute a paper order."""
         if not self._running or self._paused:
@@ -246,6 +286,17 @@ class PaperBroker:
             stop_loss=stop_loss,
             target=target,
             created_at=_now(),
+            decision_id=decision_id,
+            analysis_cycle_id=analysis_cycle_id,
+            candle_version=candle_version,
+            strategy_version=strategy_version or "1.0",
+            ai_direction=ai_direction or side,
+            ai_confidence=ai_confidence,
+            opportunity_score=opportunity_score,
+            source_provider=source_provider or "paper",
+            instrument_token=instrument_token,
+            data_timestamp=data_timestamp,
+            entry_reason=entry_reason or side,
         )
         self._positions[trade_id] = position
         self._account.open_positions += 1

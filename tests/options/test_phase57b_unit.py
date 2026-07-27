@@ -745,7 +745,8 @@ class TestCacheExtended:
         loop.close()
         assert len(insts) > 0
         # Lot size from broker metadata should be 25 (DEFAULT_LOT_SIZES for NIFTY 50)
-        assert all(i.lot_size == 25 for i in insts)
+        # Updated lot size: NIFTY=65 per NFO 2026-07-27
+        assert all(i.lot_size == 65 for i in insts)
 
 
 # ═══════════════════════════════════════════════════════════════

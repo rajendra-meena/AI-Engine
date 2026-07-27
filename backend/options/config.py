@@ -19,7 +19,7 @@ class OptionEngineConfig:
     """Immutable, validated configuration for the Options Buying Engine."""
 
     # ── Provider ──
-    provider: str = "MOCK"  # "ZERODHA" or "MOCK"
+    provider: str = "MOCK"  # "ZERODHA" or "MOCK"; change to ZERODHA for production
 
     # ── Underlying Universe ──
     underlyings: tuple[str, ...] = ("NIFTY 50", "BANKNIFTY")

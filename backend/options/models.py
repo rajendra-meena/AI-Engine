@@ -79,14 +79,16 @@ class ReadinessStatus(str, Enum):
 
 # ── Underlying Instruments ──
 
-# Indian index lot sizes — validated against live NSE data in production.
-# These are the hard-coded fallback defaults for unit testing and mock mode.
+# Indian index lot sizes — verified against live NFO instrument metadata.
+# These are fallback defaults for unit testing and mock mode ONLY.
+# Production lot sizes MUST come from broker instrument metadata (NFO segment).
+# Verified 2026-07-27 from live NFO instrument master:
 DEFAULT_LOT_SIZES: dict[str, int] = {
-    "NIFTY 50": 25,
-    "BANKNIFTY": 15,
-    "SENSEX": 20,
-    "FINNIFTY": 40,
-    "MIDCPNIFTY": 75,
+    "NIFTY 50": 65,       # NFO NIFTY options
+    "BANKNIFTY": 30,      # NFO BANKNIFTY options
+    "SENSEX": 20,         # BSE options (not in NFO)
+    "FINNIFTY": 60,       # NFO FINNIFTY options
+    "MIDCPNIFTY": 120,    # NFO MIDCPNIFTY options
 }
 
 WEEKLY_EXPIRY_WEEKDAY = 3  # Thursday (0=Mon, 3=Thu)

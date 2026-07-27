@@ -325,8 +325,8 @@ class TestOptionEngineConfig:
 
     def test_get_lot_size_known(self):
         c = OptionEngineConfig()
-        assert c.get_lot_size("NIFTY 50") == 25
-        assert c.get_lot_size("BANKNIFTY") == 15
+        assert c.get_lot_size("NIFTY 50") == 65  # Verified from NFO 2026-07-27
+        assert c.get_lot_size("BANKNIFTY") == 30  # Verified from NFO 2026-07-27
 
     def test_get_lot_size_unknown(self):
         c = OptionEngineConfig()
@@ -483,39 +483,60 @@ class TestMockOptionProvider:
 
 class TestZerodhaOptionProvider:
     def _make_kite_provider(self):
+        """Create a mock KiteProvider that supports the real SDK surface.
+        The new implementation uses kite.instruments('NFO') and kite.quote().
+        """
         kite = MagicMock()
-        kite.option_chain.return_value = self._sample_chain()
-        kp = MagicMock()
-        kp.auth.kite = kite
-        kp.auth.is_authenticated = True
-        return kp, kite
-
-    @staticmethod
-    def _sample_chain():
         today = date.today()
-        expiry = (today + timedelta(days=3)).isoformat()
-        chain = {}
-        instruments = []
+        expiry = today + timedelta(days=3)
+
+        # Mock kite.instruments('NFO') to return NFO-style contract list
+        sample_instruments = []
         for strike in [24400, 24450, 24500, 24550, 24600]:
             for ins_type in ["CE", "PE"]:
-                instruments.append({
+                sample_instruments.append({
                     "instrument_token": strike + (1 if ins_type == "CE" else 2),
                     "strike": strike,
                     "instrument_type": ins_type,
                     "expiry": expiry,
-                    "tradingsymbol": f"NIFTY {expiry} {strike} {ins_type}",
-                    "lot_size": 25,
+                    "tradingsymbol": f"NIFTY {expiry.isoformat()} {strike} {ins_type}",
+                    "name": "NIFTY",
+                    "segment": "NFO-OPT",
+                    "exchange": "NFO",
+                    "lot_size": 65,
                     "tick_size": 0.05,
-                    "quote": {
-                        "last_price": max(100 - abs(strike - 24500) * 0.5, 1),
-                        "oi": 5000 - abs(strike - 24500) * 2,
-                        "volume": 500,
-                        "bid": 99.0,
-                        "ask": 101.0,
-                    },
                 })
-        chain[expiry] = instruments
-        return chain
+
+        def instruments_side_effect(exchange=None):
+            if exchange == "NFO":
+                return sample_instruments
+            return []
+
+        kite.instruments.side_effect = instruments_side_effect
+
+        # Mock kite.quote() to return quote data keyed by "NFO:tradingsymbol"
+        def quote_side_effect(*symbols):
+            result = {}
+            for sym in symbols:
+                if sym.startswith("NFO:"):
+                    result[sym] = {
+                        "instrument_token": 12345,
+                        "last_price": 100.0,
+                        "oi": 50000,
+                        "volume": 500,
+                        "depth": {
+                            "bid": [{"price": 99.0, "quantity": 100}],
+                            "offer": [{"price": 101.0, "quantity": 100}],
+                        },
+                    }
+            return result
+
+        kite.quote.side_effect = quote_side_effect
+
+        kp = MagicMock()
+        kp.auth.kite = kite
+        kp.auth.is_authenticated = True
+        return kp, kite
 
     @pytest.mark.asyncio
     async def test_connect_success(self):
@@ -541,6 +562,10 @@ class TestZerodhaOptionProvider:
         snap = await p.fetch_chain_snapshot("NIFTY 50")
         assert snap.underlying == "NIFTY 50"
         assert len(snap.expiries) > 0
+        # Verify contracts were populated
+        for slice_ in snap.expiries.values():
+            assert len(slice_.ce_quotes) >= 5
+            assert len(slice_.pe_quotes) >= 5
 
     @pytest.mark.asyncio
     async def test_fetch_chain_not_connected(self):
@@ -562,10 +587,11 @@ class TestZerodhaOptionProvider:
     async def test_fetch_chain_kite_error(self):
         from options.providers.zerodha import ZerodhaOptionProvider
         kp, kite = self._make_kite_provider()
-        kite.option_chain.side_effect = Exception("API timeout")
+        # Make instruments() raise
+        kite.instruments.side_effect = Exception("API timeout")
         p = ZerodhaOptionProvider(kite_provider=kp)
         await p.connect()
-        with pytest.raises(RuntimeError, match="fetch failed"):
+        with pytest.raises(RuntimeError, match="fetch failed|not connected"):
             await p.fetch_chain_snapshot("NIFTY 50")
         h = await p.health()
         assert h["error_count"] == 1

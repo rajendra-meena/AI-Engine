@@ -1,8 +1,10 @@
 """
 MarketMind AI — Zerodha Option Chain Provider
 
-Implements OptionDataProvider using Zerodha Kite Connect's option_chain() API.
-Requires an authenticated Kite instance (via KiteProvider or standalone).
+Builds option chains from the real Zerodha Kite Connect API:
+  kite.instruments("NFO") → filter by underlying → batch quote → assemble
+
+No synthetic or non-existent API methods are used.
 """
 
 from __future__ import annotations
@@ -23,16 +25,22 @@ from options.providers.base import OptionDataProvider, ProviderCapabilities
 
 from utils.logger import log_info, log_warn, log_error
 
+# Kite exchange → segment mapping for NFO options
+_KITE_EXCHANGE = "NFO"
+
 
 class ZerodhaOptionProvider(OptionDataProvider):
     """
-    Option chain data provider backed by Zerodha Kite Connect.
-
-    Usage:
-        provider = ZerodhaOptionProvider(kite_provider)
-        await provider.connect()
-        chain = await provider.fetch_chain_snapshot("NIFTY 50")
+    Zerodha option chain provider using real Kite SDK methods.
+    Uses kite.instruments('NFO') + kite.quote() — no non-existent methods.
     """
+
+    _NSE_SYMBOL_MAP = {
+        "NIFTY 50": "NIFTY",
+        "BANKNIFTY": "NIFTY BANK",
+        "BANK NIFTY": "NIFTY BANK",
+        "SENSEX": "SENSEX",
+    }
 
     def __init__(self, kite_provider: Any = None):
         self._kite = None
@@ -41,9 +49,12 @@ class ZerodhaOptionProvider(OptionDataProvider):
         self._last_fetch: datetime | None = None
         self._fetch_count = 0
         self._error_count = 0
+        # Cached NFO instruments — refreshed lazily
+        self._nfo_instruments: list[dict[str, Any]] = []
+        self._instruments_loaded = False
 
     async def connect(self) -> bool:
-        """Establish connection. Reuses existing KiteProvider if provided."""
+        """Establish connection via existing KiteProvider."""
         try:
             if self._kite_provider and hasattr(self._kite_provider, "auth"):
                 self._kite = self._kite_provider.auth.kite
@@ -51,10 +62,8 @@ class ZerodhaOptionProvider(OptionDataProvider):
                     self._connected = True
                     log_info("ZerodhaOptionProvider connected via KiteProvider")
                     return True
-
-            log_warn("ZerodhaOptionProvider: no authenticated Kite instance available")
+            log_warn("ZerodhaOptionProvider: no authenticated Kite instance")
             return False
-
         except Exception as e:
             log_error("ZerodhaOptionProvider connect failed", error=str(e))
             return False
@@ -62,6 +71,8 @@ class ZerodhaOptionProvider(OptionDataProvider):
     async def disconnect(self) -> None:
         self._connected = False
         self._kite = None
+        self._nfo_instruments.clear()
+        self._instruments_loaded = False
         log_info("ZerodhaOptionProvider disconnected")
 
     async def health(self) -> dict[str, Any]:
@@ -71,6 +82,7 @@ class ZerodhaOptionProvider(OptionDataProvider):
             "kite_available": self._kite is not None,
             "fetch_count": self._fetch_count,
             "error_count": self._error_count,
+            "instruments_loaded": self._instruments_loaded,
             "last_fetch": (
                 self._last_fetch.isoformat() if self._last_fetch else None
             ),
@@ -87,6 +99,20 @@ class ZerodhaOptionProvider(OptionDataProvider):
             underlyings=("NIFTY 50", "BANKNIFTY", "SENSEX"),
         )
 
+    async def _load_nfo_instruments(self) -> None:
+        """Fetch and cache the NFO instrument master via kite.instruments()."""
+        if not self._kite:
+            raise RuntimeError("ZerodhaOptionProvider not connected")
+        self._nfo_instruments = await asyncio.to_thread(
+            self._kite.instruments, _KITE_EXCHANGE
+        )
+        self._instruments_loaded = True
+        log_info("ZerodhaOptionProvider: NFO instruments loaded",
+                 count=len(self._nfo_instruments))
+
+    def _get_nfo_instruments(self) -> list[dict[str, Any]]:
+        return list(self._nfo_instruments)
+
     async def fetch_chain_snapshot(
         self,
         underlying: str,
@@ -95,104 +121,182 @@ class ZerodhaOptionProvider(OptionDataProvider):
         if not self._connected or not self._kite:
             raise RuntimeError("ZerodhaOptionProvider not connected")
 
-        kite_symbol = self._map_symbol(underlying)
-        if not kite_symbol:
+        name = self._NSE_SYMBOL_MAP.get(underlying)
+        if not name:
             raise ValueError(f"Unknown underlying: {underlying}")
 
         try:
-            raw = await asyncio.to_thread(self._kite.option_chain, kite_symbol)
-            self._fetch_count += 1
-            self._last_fetch = datetime.now(timezone.utc)
+            return await self._do_fetch_chain(name, underlying, expiries)
+        except (RuntimeError, ValueError):
+            raise
         except Exception as e:
             self._error_count += 1
-            log_error("ZerodhaOptionProvider fetch_chain failed", error=str(e))
             raise RuntimeError(f"Option chain fetch failed: {e}") from e
 
-        spot_price = 0.0
-        expiries_dict: dict[date, OptionChainSlice] = {}
+    async def _do_fetch_chain(
+        self,
+        name: str,
+        underlying: str,
+        expiries: list[date] | None = None,
+    ) -> OptionChainSnapshot:
+        # Load NFO instruments if not cached
+        if not self._instruments_loaded or not self._nfo_instruments:
+            await self._load_nfo_instruments()
 
-        for expiry_str, instruments in raw.items():
+        # Filter contracts for this underlying, CE and PE only
+        contract_filter = [
+            i for i in self._nfo_instruments
+            if i.get("name") == name
+            and i.get("instrument_type") in ("CE", "PE")
+            and i.get("segment") == "NFO-OPT"
+        ]
+
+        if not contract_filter:
+            log_warn("ZerodhaOptionProvider: no contracts found",
+                     underlying=underlying, name=name)
+            return OptionChainSnapshot(
+                underlying=underlying, spot_price=0.0,
+                expiries={}, source=OptionChainSource.ZERODHA,
+            )
+
+        # Group by expiry
+        by_expiry: dict[date, list[dict[str, Any]]] = {}
+        for c in contract_filter:
+            exp = c.get("expiry")
+            if not exp or not isinstance(exp, date):
+                continue
+            if expiries and exp not in expiries:
+                continue
+            by_expiry.setdefault(exp, []).append(c)
+
+        # Build NFO-prefixed tradingsymbols for batch quote lookup
+        nfo_symbols: list[str] = []
+        symbol_by_token: dict[int, str] = {}
+        for exp_conts in by_expiry.values():
+            for c in exp_conts:
+                tsym = c.get("tradingsymbol", "")
+                token = int(c.get("instrument_token", 0))
+                if tsym and token:
+                    nfosym = f"NFO:{tsym}"
+                    nfo_symbols.append(nfosym)
+                    symbol_by_token[token] = nfosym
+
+        # Fetch batch quotes via kite.quote() — takes varargs of "EXCHANGE:SYMBOL"
+        quote_map: dict[str, dict[str, Any]] = {}
+        if nfo_symbols:
             try:
-                expiry_dt = datetime.strptime(expiry_str, "%Y-%m-%d").date()
-            except (ValueError, TypeError):
-                continue
+                raw_quotes = await asyncio.to_thread(
+                    self._kite.quote, *nfo_symbols
+                )
+                quote_map = raw_quotes
+            except Exception as e:
+                log_warn("ZerodhaOptionProvider: batch quote failed", error=str(e))
 
-            if expiries and expiry_dt not in expiries:
-                continue
+        # Fallback ltp for tokens without full quotes
+        ltp_map: dict[str, float] = {}
+        if not quote_map and nfo_symbols:
+            try:
+                raw_ltps = await asyncio.to_thread(
+                    self._kite.ltp, *nfo_symbols
+                )
+                for sym in nfo_symbols:
+                    lt = raw_ltps.get(sym, {})
+                    ltp_map[sym] = lt.get("last_price", 0)
+            except Exception as e:
+                log_warn("ZerodhaOptionProvider: batch ltp failed", error=str(e))
 
-            strikes: list[float] = []
+        def _get_qdata(token_id: int) -> dict[str, Any]:
+            """Look up quote data by token using NFO:symbol map key."""
+            qsym = symbol_by_token.get(token_id)
+            if qsym:
+                return quote_map.get(qsym, {})
+            return {}
+
+        spot_price = 0.0
+        slices: dict[date, OptionChainSlice] = {}
+
+        for expiry_dt, conts in sorted(by_expiry.items()):
+            strikes_list: list[float] = []
             ce_quotes: dict[float, OptionQuote] = {}
             pe_quotes: dict[float, OptionQuote] = {}
 
-            for inst_data in instruments:
+            for c in conts:
                 try:
-                    ins_token = int(inst_data.get("instrument_token", 0))
-                    ins_strike = float(inst_data.get("strike", 0))
-                    ins_type = inst_data.get("instrument_type", "")
-                    ins_expiry_str = inst_data.get("expiry", "")
-                    ins_trading = inst_data.get("tradingsymbol", "")
-                    ins_lot = int(inst_data.get("lot_size", 25))
-                    ins_tick = float(inst_data.get("tick_size", 0.05))
+                    token_id = int(c.get("instrument_token", 0))
+                    strike = float(c.get("strike", 0))
+                    ins_type = c.get("instrument_type", "")
+                    tradingsymbol = c.get("tradingsymbol", "")
+                    lot_size = int(c.get("lot_size", 0))
+                    tick_size = float(c.get("tick_size", 0.05))
 
-                    quote_data = inst_data.get("quote", {})
-                    ins_ltp = float(quote_data.get("last_price", 0))
-                    ins_oi = int(quote_data.get("oi", 0))
-                    ins_vol = int(quote_data.get("volume", 0))
-                    ins_bid = float(quote_data.get("bid", 0))
-                    ins_ask = float(quote_data.get("ask", 0))
-
-                    if ins_type not in ("CE", "PE"):
+                    if strike <= 0:
                         continue
 
                     opt_type = OptionType.CE if ins_type == "CE" else OptionType.PE
 
+                    # Get quote data via NFO:symbol key
+                    qdata = _get_qdata(token_id)
+                    ltp_val = float(qdata.get("last_price", ltp_map.get(symbol_by_token.get(token_id, ""), 0)))
+                    oi_val = int(qdata.get("oi", 0))
+                    vol_val = int(qdata.get("volume", 0))
+                    bid_val = 0.0
+                    ask_val = 0.0
+                    depth = qdata.get("depth", {})
+                    if depth:
+                        bid_data = depth.get("bid", [{}])
+                        ask_data = depth.get("offer", [{}])
+                        if bid_data and isinstance(bid_data, list):
+                            bid_val = float(bid_data[0].get("price", 0)) if bid_data else 0
+                        if ask_data and isinstance(ask_data, list):
+                            ask_val = float(ask_data[0].get("price", 0)) if ask_data else 0
+
                     instrument = OptionInstrument(
-                        symbol=ins_trading,
+                        symbol=tradingsymbol,
                         underlying=underlying,
                         expiry=expiry_dt,
-                        strike=ins_strike,
+                        strike=strike,
                         option_type=opt_type,
-                        exchange="NSE",
-                        instrument_token=ins_token,
-                        lot_size=ins_lot,
-                        tick_size=ins_tick,
-                        trading_symbol=ins_trading,
+                        exchange="NFO",
+                        instrument_token=token,
+                        lot_size=lot_size,
+                        tick_size=tick_size,
+                        trading_symbol=tradingsymbol,
                     )
 
                     quote = OptionQuote(
                         instrument=instrument,
-                        ltp=ins_ltp,
-                        bid=ins_bid,
-                        ask=ins_ask,
-                        oi=ins_oi,
-                        volume=ins_vol,
+                        ltp=ltp_val,
+                        bid=bid_val,
+                        ask=ask_val,
+                        oi=oi_val,
+                        volume=vol_val,
                         timestamp=datetime.now(timezone.utc),
                     )
 
-                    if ins_strike not in strikes:
-                        strikes.append(ins_strike)
+                    if strike not in strikes_list:
+                        strikes_list.append(strike)
 
                     if ins_type == "CE":
-                        ce_quotes[ins_strike] = quote
+                        ce_quotes[strike] = quote
                     else:
-                        pe_quotes[ins_strike] = quote
+                        pe_quotes[strike] = quote
 
-                    # Approximate spot from ATM CE strike
-                    if ins_type == "CE" and ins_ltp > 0 and ins_oi > 1000:
-                        if spot_price == 0 or abs(ins_strike - spot_price) < abs(
-                            ins_strike - spot_price
-                        ):
-                            spot_price = ins_strike
+                    # Approximate spot price from nearest-to-ATM LTP option
+                    if ins_type == "CE" and ltp_val > 0:
+                        if spot_price == 0:
+                            spot_price = strike
+                        elif abs(strike - spot_price) < abs(strike - spot_price):
+                            spot_price = strike
 
                 except (ValueError, TypeError, KeyError):
                     continue
 
-            if strikes:
-                strikes.sort()
-                expiries_dict[expiry_dt] = OptionChainSlice(
+            if strikes_list:
+                strikes_list.sort()
+                slices[expiry_dt] = OptionChainSlice(
                     underlying=underlying,
                     expiry=expiry_dt,
-                    strikes=strikes,
+                    strikes=strikes_list,
                     ce_quotes=ce_quotes,
                     pe_quotes=pe_quotes,
                     spot_price=spot_price,
@@ -200,10 +304,12 @@ class ZerodhaOptionProvider(OptionDataProvider):
                     source=OptionChainSource.ZERODHA,
                 )
 
+        self._fetch_count += 1
+        self._last_fetch = datetime.now(timezone.utc)
         return OptionChainSnapshot(
             underlying=underlying,
             spot_price=spot_price,
-            expiries=expiries_dict,
+            expiries=slices,
             fetched_at=datetime.now(timezone.utc),
             source=OptionChainSource.ZERODHA,
         )
@@ -254,13 +360,3 @@ class ZerodhaOptionProvider(OptionDataProvider):
     ) -> list[date]:
         snapshot = await self.fetch_chain_snapshot(underlying)
         return snapshot.available_expiries
-
-    @staticmethod
-    def _map_symbol(underlying: str) -> str | None:
-        mapping = {
-            "NIFTY 50": "NIFTY 50",
-            "BANKNIFTY": "NIFTY BANK",
-            "BANK NIFTY": "NIFTY BANK",
-            "SENSEX": "SENSEX",
-        }
-        return mapping.get(underlying)
