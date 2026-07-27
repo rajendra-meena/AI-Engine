@@ -5,11 +5,21 @@ Canonical event constants for the Options Buying Engine.
 All events published via EventBus MUST use these constants.
 """
 
+# ── Instrument Discovery ──
+
+OPTION_INSTRUMENTS_REFRESH_STARTED = "option_instruments_refresh_started"
+OPTION_INSTRUMENTS_LOADED = "option_instruments_loaded"
+OPTION_INSTRUMENTS_REFRESH_FAILED = "option_instruments_refresh_failed"
+
 # ── Chain Ingestion ──
 
+OPTION_CHAIN_REFRESH_STARTED = "option_chain_refresh_started"
 OPTION_CHAIN_RECEIVED = "option_chain_received"
+OPTION_CHAIN_VALIDATED = "option_chain_validated"
+OPTION_CHAIN_UPDATED = "option_chain_updated"
+OPTION_CHAIN_AGING = "option_chain_aging"
 OPTION_CHAIN_STALE = "option_chain_stale"
-OPTION_CHAIN_FETCH_FAILED = "option_chain_fetch_failed"
+OPTION_CHAIN_REFRESH_FAILED = "option_chain_refresh_failed"
 
 # ── Strike Analysis ──
 
@@ -40,10 +50,17 @@ OPTION_SHADOW_ORDER_PLACED = "option_shadow_order_placed"
 OPTION_SHADOW_ORDER_FILLED = "option_shadow_order_filled"
 OPTION_SHADOW_ORDER_CANCELLED = "option_shadow_order_cancelled"
 
+# ── Provider Health ──
+
+OPTION_PROVIDER_CONNECTED = "option_provider_connected"
+OPTION_PROVIDER_DEGRADED = "option_provider_degraded"
+OPTION_PROVIDER_DISCONNECTED = "option_provider_disconnected"
+
 # ── Engine Lifecycle ──
 
 OPTIONS_ENGINE_STARTED = "options_engine_started"
 OPTIONS_ENGINE_STOPPED = "options_engine_stopped"
 OPTIONS_ENGINE_ERROR = "options_engine_error"
-OPTION_PROVIDER_CONNECTED = "option_provider_connected"
-OPTION_PROVIDER_DISCONNECTED = "option_provider_disconnected"
+OPTION_ENGINE_READY = "option_engine_ready"
+OPTION_ENGINE_DEGRADED = "option_engine_degraded"
+OPTION_ENGINE_NOT_READY = "option_engine_not_ready"

@@ -28,6 +28,12 @@ class OptionEngineConfig:
     # ── Chain Freshness ──
     chain_max_age_seconds: float = 15.0
     chain_poll_interval_seconds: float = 5.0
+    chain_stale_after_seconds: float = 60.0
+    instrument_refresh_interval_seconds: float = 300.0
+    provider_timeout_seconds: float = 10.0
+    provider_error_initial_backoff_seconds: float = 2.0
+    provider_error_max_backoff_seconds: float = 60.0
+    market_closed_poll_interval_seconds: float = 300.0
 
     # ── AI Decision Freshness ──
     ai_max_age_seconds: float = 30.0
@@ -92,6 +98,18 @@ class OptionEngineConfig:
             raise ValueError("max_daily_loss_pct must be in (0, 100]")
         if not (0.0 < self.min_confidence <= 1.0):
             raise ValueError("min_confidence must be in (0, 1.0]")
+        # Freshness validation
+        if self.chain_poll_interval_seconds <= 0:
+            raise ValueError("chain_poll_interval_seconds must be > 0")
+        if self.chain_max_age_seconds <= 0:
+            raise ValueError("chain_max_age_seconds must be > 0")
+        if self.chain_stale_after_seconds < self.chain_max_age_seconds:
+            raise ValueError(
+                f"chain_stale_after_seconds ({self.chain_stale_after_seconds}) "
+                f"must be >= chain_max_age_seconds ({self.chain_max_age_seconds})"
+            )
+        if self.provider_timeout_seconds <= 0:
+            raise ValueError("provider_timeout_seconds must be > 0")
 
     def get_lot_size(self, underlying: str) -> int:
         return self.lot_sizes.get(underlying, 25)
@@ -111,6 +129,24 @@ class OptionEngineConfig:
             ),
             chain_poll_interval_seconds=float(
                 os.getenv("OPTIONS_CHAIN_POLL_INTERVAL_SECONDS", "5")
+            ),
+            chain_stale_after_seconds=float(
+                os.getenv("OPTIONS_CHAIN_STALE_AFTER_SECONDS", "60")
+            ),
+            instrument_refresh_interval_seconds=float(
+                os.getenv("OPTIONS_INSTRUMENT_REFRESH_INTERVAL_SECONDS", "300")
+            ),
+            provider_timeout_seconds=float(
+                os.getenv("OPTIONS_PROVIDER_TIMEOUT_SECONDS", "10")
+            ),
+            provider_error_initial_backoff_seconds=float(
+                os.getenv("OPTIONS_PROVIDER_ERROR_INITIAL_BACKOFF_SECONDS", "2")
+            ),
+            provider_error_max_backoff_seconds=float(
+                os.getenv("OPTIONS_PROVIDER_ERROR_MAX_BACKOFF_SECONDS", "60")
+            ),
+            market_closed_poll_interval_seconds=float(
+                os.getenv("OPTIONS_MARKET_CLOSED_POLL_INTERVAL_SECONDS", "300")
             ),
             ai_max_age_seconds=float(os.getenv("OPTIONS_AI_MAX_AGE_SECONDS", "30")),
             min_oi=int(os.getenv("OPTIONS_MIN_OI", "500")),
@@ -163,6 +199,9 @@ class OptionEngineConfig:
             "underlyings": list(self.underlyings),
             "chain_max_age_seconds": self.chain_max_age_seconds,
             "chain_poll_interval_seconds": self.chain_poll_interval_seconds,
+            "chain_stale_after_seconds": self.chain_stale_after_seconds,
+            "instrument_refresh_interval_seconds": self.instrument_refresh_interval_seconds,
+            "provider_timeout_seconds": self.provider_timeout_seconds,
             "ai_max_age_seconds": self.ai_max_age_seconds,
             "min_oi": self.min_oi,
             "min_volume": self.min_volume,

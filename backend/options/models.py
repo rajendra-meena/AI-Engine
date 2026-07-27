@@ -57,6 +57,26 @@ class OptionTimeframe(str, Enum):
     POSITIONAL = "POSITIONAL"
 
 
+class FreshnessState(str, Enum):
+    UNKNOWN = "UNKNOWN"
+    FRESH = "FRESH"
+    AGING = "AGING"
+    STALE = "STALE"
+    UNAVAILABLE = "UNAVAILABLE"
+    ERROR = "ERROR"
+
+
+class ReadinessStatus(str, Enum):
+    NOT_STARTED = "NOT_STARTED"
+    LOADING_INSTRUMENTS = "LOADING_INSTRUMENTS"
+    WAITING_FOR_CHAIN = "WAITING_FOR_CHAIN"
+    READY = "READY"
+    DEGRADED = "DEGRADED"
+    STALE = "STALE"
+    PROVIDER_ERROR = "PROVIDER_ERROR"
+    STOPPED = "STOPPED"
+
+
 # ── Underlying Instruments ──
 
 # Indian index lot sizes — validated against live NSE data in production.
@@ -154,6 +174,10 @@ class OptionQuote:
     def __post_init__(self):
         if self.ltp < 0:
             raise ValueError(f"ltp must be non-negative, got {self.ltp}")
+        if self.oi < 0:
+            raise ValueError(f"oi must be non-negative, got {self.oi}")
+        if self.volume < 0:
+            raise ValueError(f"volume must be non-negative, got {self.volume}")
 
     @property
     def spread(self) -> float:
@@ -471,3 +495,160 @@ class ExitOrder:
     exit_time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     quantity: int = 0
     realized_pnl: float = 0.0
+
+
+# ── Phase 57B Models ──
+
+
+@dataclass(frozen=True, slots=True)
+class ChainValidationResult:
+    """Result of structural chain validation."""
+
+    accepted: bool
+    errors: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+    contract_count: int = 0
+    ce_count: int = 0
+    pe_count: int = 0
+    expiry_count: int = 0
+    invalid_contract_count: int = 0
+    schema_version: str = "1.0"
+
+
+@dataclass(frozen=True, slots=True)
+class InstrumentRefreshResult:
+    """Result of an instrument refresh operation."""
+
+    success: bool
+    underlying: str
+    instrument_count: int = 0
+    expiry_count: int = 0
+    error: str = ""
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+@dataclass(frozen=True, slots=True)
+class OptionChainRefreshResult:
+    """Result of a chain refresh operation for one underlying."""
+
+    success: bool
+    underlying: str
+    chain_version: int = 0
+    instrument_version: int = 0
+    validation: ChainValidationResult | None = None
+    freshness: FreshnessState = FreshnessState.UNKNOWN
+    error: str = ""
+    error_code: str = ""
+    duration_ms: float = 0.0
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    analysis_cycle_id: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class OptionEngineReadiness:
+    """Readiness state of the Options Engine."""
+
+    engine_running: bool = False
+    provider_ready: bool = False
+    instruments_loaded: bool = False
+    chain_available: bool = False
+    chain_fresh: bool = False
+    freshness: FreshnessState = FreshnessState.UNKNOWN
+    status: ReadinessStatus = ReadinessStatus.NOT_STARTED
+    blocked_reasons: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+    last_success_at: datetime | None = None
+    last_attempt_at: datetime | None = None
+    last_error: str = ""
+    consecutive_failures: int = 0
+    chain_version: int = 0
+    underlying_statuses: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def is_ready(self) -> bool:
+        return self.status == ReadinessStatus.READY
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "engine_running": self.engine_running,
+            "provider_ready": self.provider_ready,
+            "instruments_loaded": self.instruments_loaded,
+            "chain_available": self.chain_available,
+            "chain_fresh": self.chain_fresh,
+            "freshness": self.freshness.value,
+            "status": self.status.value,
+            "blocked_reasons": list(self.blocked_reasons),
+            "warnings": list(self.warnings),
+            "last_success_at": (
+                self.last_success_at.isoformat() if self.last_success_at else None
+            ),
+            "last_attempt_at": (
+                self.last_attempt_at.isoformat() if self.last_attempt_at else None
+            ),
+            "last_error": self.last_error,
+            "consecutive_failures": self.consecutive_failures,
+            "chain_version": self.chain_version,
+            "underlying_statuses": dict(self.underlying_statuses),
+        }
+
+
+@dataclass(slots=True)
+class OptionChainCacheStatus:
+    """Status of the option chain cache for a single underlying."""
+
+    underlying: str
+    has_data: bool = False
+    chain_version: int = 0
+    instrument_version: int = 0
+    freshness: FreshnessState = FreshnessState.UNKNOWN
+    data_age_seconds: float = -1.0
+    last_success_at: datetime | None = None
+    last_attempt_at: datetime | None = None
+    last_error: str = ""
+    consecutive_failures: int = 0
+    expiry_count: int = 0
+    contract_count: int = 0
+    schema_version: str = "1.0"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "underlying": self.underlying,
+            "has_data": self.has_data,
+            "chain_version": self.chain_version,
+            "instrument_version": self.instrument_version,
+            "freshness": self.freshness.value,
+            "data_age_seconds": round(self.data_age_seconds, 2),
+            "last_success_at": (
+                self.last_success_at.isoformat() if self.last_success_at else None
+            ),
+            "last_attempt_at": (
+                self.last_attempt_at.isoformat() if self.last_attempt_at else None
+            ),
+            "last_error": self.last_error,
+            "consecutive_failures": self.consecutive_failures,
+            "expiry_count": self.expiry_count,
+            "contract_count": self.contract_count,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class FreshnessInfo:
+    """Detailed freshness tracking for a cached snapshot."""
+
+    state: FreshnessState = FreshnessState.UNKNOWN
+    age_seconds: float = -1.0
+    max_age_seconds: float = 15.0
+    stale_after_seconds: float = 60.0
+    timestamp_source: str = ""
+    fetched_at: datetime | None = None
+    provider_timestamp: datetime | None = None
+    received_at: datetime | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "state": self.state.value,
+            "age_seconds": round(self.age_seconds, 2),
+            "max_age_seconds": self.max_age_seconds,
+            "stale_after_seconds": self.stale_after_seconds,
+            "timestamp_source": self.timestamp_source,
+        }

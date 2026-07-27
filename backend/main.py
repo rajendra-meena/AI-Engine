@@ -48,6 +48,7 @@ from api.market_stream import router as market_stream_router
 from api.ai_analyze import router as ai_analyze_router, set_decision_service
 from api.trade_plans import router as trade_plans_router, set_trade_planner
 from api.execution import router as execution_router, set_execution_gateway
+from api.options import router as options_router
 from api.paper import router as paper_router
 from api.performance import router as performance_router
 from api.backtest import router as backtest_router, set_backtest_runner
@@ -97,6 +98,11 @@ from core.symbols import list_canonical_names
 from core import service_locator
 from utils.logger import log_info, log_warn
 
+# Options Engine (Phase 57)
+from options.config import OptionEngineConfig
+from options.providers.mock import MockOptionProvider
+from options.chain_engine import OptionChainEngine
+
 # Load .env from project root (parent of backend/)
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
@@ -117,6 +123,7 @@ trading_context_engine: TradingContextEngine | None = None
 sr_engine: SREngine | None = None
 ai_decision_engine: AIDecisionEngine | None = None
 mtf_engine: MTFEngine | None = None
+option_chain_engine: OptionChainEngine | None = None
 
 
 @asynccontextmanager
@@ -125,6 +132,7 @@ async def lifespan(app: FastAPI):
     global live_engine, websocket_gateway, replay_engine, tick_engine
     global stream_router, candle_engine, indicator_engine, market_structure_engine
     global pattern_engine, trading_context_engine, sr_engine, ai_decision_engine, mtf_engine
+    global option_chain_engine
 
     # ── Startup ──
     log_info("Application starting", title="MarketMind AI Backend")
@@ -534,6 +542,30 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 log_warn("Engine seeding skipped", error=str(e))
 
+        # ── Start Option Chain Engine (Phase 57B) ──
+        try:
+            cfg = OptionEngineConfig.from_env()
+            if cfg.provider.upper() == "MOCK":
+                option_provider = MockOptionProvider(spot=24500.0)
+            else:
+                # In production, wire ZerodhaOptionProvider here
+                from options.providers.zerodha import ZerodhaOptionProvider
+                from data.provider_factory import ProviderFactory
+                _pf = ProviderFactory()
+                _kp = _pf.get_provider("zerodha")
+                option_provider = ZerodhaOptionProvider(kite_provider=_kp)
+
+            option_chain_engine = OptionChainEngine(
+                provider=option_provider,
+                config=cfg,
+                event_bus=event_bus,
+            )
+            await option_chain_engine.start()
+            service_locator.option_chain_engine = option_chain_engine  # type: ignore[attr-defined]
+            log_info("OptionChainEngine started via lifespan")
+        except Exception as e:
+            log_warn("OptionChainEngine initialization skipped", error=str(e))
+
     yield  # Application runs here
 
     # ── Shutdown ──
@@ -555,6 +587,13 @@ async def lifespan(app: FastAPI):
         await ai_decision_engine.stop()
     if mtf_engine:
         await mtf_engine.stop()
+    # ── Option Chain Engine shutdown (Phase 57B) ──
+    if option_chain_engine:
+        try:
+            await option_chain_engine.stop()
+            log_info("OptionChainEngine stopped")
+        except Exception as e:
+            log_warn("OptionChainEngine stop error", error=str(e))
     await tick_engine.stop()
     if stream_router:
         await stream_router.stop()
@@ -599,6 +638,7 @@ app.include_router(ai_router)
 app.include_router(ai_analyze_router)
 app.include_router(trade_plans_router)
 app.include_router(execution_router)
+app.include_router(options_router)
 app.include_router(paper_router)
 app.include_router(performance_router)
 app.include_router(backtest_router)

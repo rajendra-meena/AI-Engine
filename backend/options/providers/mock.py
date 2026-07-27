@@ -52,15 +52,26 @@ class MockOptionProvider(OptionDataProvider):
         base_oi: int = 5000,
         base_volume: int = 500,
         expiry_days: list[int] | None = None,
+        stale_offset_seconds: float = 0.0,
+        fail_next_fetch: bool = False,
+        fail_next_chain_fetch: bool = False,
+        empty_chain: bool = False,
+        malformed_chain: bool = False,
     ):
         self._spot = spot
         self._base_vol = base_volatility
         self._base_oi = base_oi
-        self._base_vol = base_volume
+        self._base_volume = base_volume  # renamed: was overwriting _base_vol
         self._expiry_days = expiry_days or [3, 10, 17, 24]
         self._connected = False
         self._fetch_count = 0
         self._request_log: list[dict[str, Any]] = []
+        self._stale_offset_seconds = stale_offset_seconds
+        self._fail_next_fetch = fail_next_fetch  # fails fetch_chain_snapshot only
+        self._fail_next_chain_fetch = fail_next_chain_fetch  # fails fetch_chain_snapshot only (alt name)
+        self._fail_next_instruments = False  # fails fetch_instruments only
+        self._empty_chain = empty_chain
+        self._malformed_chain = malformed_chain
 
     async def connect(self) -> bool:
         self._connected = True
@@ -94,6 +105,27 @@ class MockOptionProvider(OptionDataProvider):
     def set_spot(self, spot: float) -> None:
         self._spot = spot
 
+    def set_stale_offset(self, seconds: float) -> None:
+        self._stale_offset_seconds = seconds
+
+    def set_fail_next_fetch(self, fail: bool = True) -> None:
+        """Fail the next fetch_chain_snapshot call."""
+        self._fail_next_fetch = fail
+
+    def set_fail_next_chain_fetch(self, fail: bool = True) -> None:
+        """Fail the next fetch_chain_snapshot call (alt name)."""
+        self._fail_next_chain_fetch = fail
+
+    def set_fail_next_instruments(self, fail: bool = True) -> None:
+        """Fail the next fetch_instruments call."""
+        self._fail_next_instruments = fail
+
+    def set_empty_chain(self, empty: bool = True) -> None:
+        self._empty_chain = empty
+
+    def set_malformed_chain(self, malformed: bool = True) -> None:
+        self._malformed_chain = malformed
+
     def get_request_log(self) -> list[dict[str, Any]]:
         return list(self._request_log)
 
@@ -111,6 +143,37 @@ class MockOptionProvider(OptionDataProvider):
             }
         )
         self._fetch_count += 1
+
+        if self._fail_next_fetch:
+            self._fail_next_fetch = False
+            raise RuntimeError("Mock provider forced fetch failure")
+
+        if self._fail_next_chain_fetch:
+            self._fail_next_chain_fetch = False
+            raise RuntimeError("Mock provider forced chain fetch failure")
+
+        fetched_at = datetime.now(timezone.utc)
+        if self._stale_offset_seconds > 0:
+            fetched_at = fetched_at - __import__("datetime").timedelta(seconds=self._stale_offset_seconds)
+
+        if self._empty_chain:
+            return OptionChainSnapshot(
+                underlying=underlying,
+                spot_price=self._spot,
+                expiries={},
+                fetched_at=fetched_at,
+                source=OptionChainSource.MOCK,
+            )
+
+        if self._malformed_chain:
+            return OptionChainSnapshot(
+                underlying=underlying,
+                spot_price=-1,
+                expiries={},
+                fetched_at=fetched_at,
+                source=OptionChainSource.MOCK,
+            )
+
         today = date.today()
         expiry_dates = [
             today + timedelta(days=d) for d in self._expiry_days
@@ -137,7 +200,7 @@ class MockOptionProvider(OptionDataProvider):
                 ce_quotes=ce_quotes,
                 pe_quotes=pe_quotes,
                 spot_price=self._spot,
-                fetched_at=datetime.now(timezone.utc),
+                fetched_at=fetched_at,
                 source=OptionChainSource.MOCK,
             )
 
@@ -145,7 +208,7 @@ class MockOptionProvider(OptionDataProvider):
             underlying=underlying,
             spot_price=self._spot,
             expiries=slices,
-            fetched_at=datetime.now(timezone.utc),
+            fetched_at=fetched_at,
             source=OptionChainSource.MOCK,
         )
 
@@ -176,17 +239,36 @@ class MockOptionProvider(OptionDataProvider):
         underlying: str,
         expiry: date | None = None,
     ) -> list[OptionInstrument]:
-        snapshot = await self.fetch_chain_snapshot(underlying)
+        if self._fail_next_instruments:
+            self._fail_next_instruments = False
+            raise RuntimeError("Mock provider forced instruments fetch failure")
+
+        # Build instruments from scratch without consuming the chain fetch fail flag
+        today = date.today()
+        expiry_dates = [today + timedelta(days=d) for d in self._expiry_days]
+        lot_size = DEFAULT_LOT_SIZES.get(underlying, 25)
+        strikes = _strike_range(self._spot)
+
         instruments: list[OptionInstrument] = []
-        target_expiries = [expiry] if expiry else list(snapshot.expiries.keys())
+        target_expiries = [expiry] if expiry else expiry_dates
         for exp in target_expiries:
-            s = snapshot.get_slice(exp)
-            if not s:
-                continue
-            for q in s.ce_quotes.values():
-                instruments.append(q.instrument)
-            for q in s.pe_quotes.values():
-                instruments.append(q.instrument)
+            dte = max((exp - today).days, 1)
+            for strike in strikes:
+                for opt_type in (OptionType.CE, OptionType.PE):
+                    h = int(hashlib.md5(f"{underlying}:{exp}:{strike}:{opt_type.value}".encode()).hexdigest()[:8], 16)
+                    instrument = OptionInstrument(
+                        symbol=f"{underlying} {exp.strftime('%d%b').upper()} {strike:.0f} {opt_type.value}",
+                        underlying=underlying,
+                        expiry=exp,
+                        strike=strike,
+                        option_type=opt_type,
+                        exchange="NSE",
+                        instrument_token=h % 1_000_000,
+                        lot_size=lot_size,
+                        tick_size=0.05,
+                        trading_symbol=f"{underlying} {exp.strftime('%d%b').upper()} {strike:.0f} {opt_type.value}",
+                    )
+                    instruments.append(instrument)
         return instruments
 
     async def get_available_expiries(
@@ -221,7 +303,7 @@ class MockOptionProvider(OptionDataProvider):
             seed = f"{underlying}:{expiry}:{strike}:{option_type.value}"
             h = int(hashlib.md5(seed.encode()).hexdigest()[:8], 16)
             oi = max(self._base_oi - int(distance_pct * 100) + (h % 1000), 50)
-            vol = max(self._base_vol - int(distance_pct * 50) + (h % 200), 10)
+            vol = max(self._base_volume - int(distance_pct * 50) + (h % 200), 10)
             spread = round(max(0.1, premium * 0.02), 2)
 
             instrument = OptionInstrument(

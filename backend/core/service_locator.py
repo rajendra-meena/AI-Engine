@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from tick.engine import TickEngine
     from websocket.gateway import WebSocketGateway
     from replay.engine import ReplayEngine
+    from options.chain_engine import OptionChainEngine
 
 
 # ── Global references (set by main.py during lifespan) ──
@@ -28,6 +29,7 @@ stream_router: StreamRouter | None = None
 tick_engine: TickEngine | None = None
 websocket_gateway: WebSocketGateway | None = None
 replay_engine: ReplayEngine | None = None
+option_chain_engine: OptionChainEngine | None = None
 
 
 def ensure_gateway() -> WebSocketGateway:
