@@ -108,7 +108,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 # ── Global services ──
 
-event_bus = EventBus(max_queue_size=1000)
+event_bus = EventBus(max_queue_size=5000)
 live_engine: LiveMarketDataEngine | None = None
 regime_engine: RegimeEngine | None = None
 websocket_gateway: WebSocketGateway | None = None
@@ -422,6 +422,10 @@ async def lifespan(app: FastAPI):
                         type="candle_closed", source="warmup", payload=candle_payload
                     )
                     await event_bus.publish(ev)
+
+                # Yield control between intervals so EventBus consumers
+                # can process events and avoid queue overflow.
+                await asyncio.sleep(0)
 
                 log_info("Warmup candles fed via EventBus",
                          symbol=symbol, interval=interval, count=len(candles))
