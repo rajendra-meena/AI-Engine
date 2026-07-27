@@ -1205,6 +1205,9 @@ async def _engine_lifecycle():
     """
     global _engine_state, _analysis_enabled
 
+    # Reset analysis_enabled — guards against stale False from previous run
+    _analysis_enabled = True
+
     # State mapping: ZerodhaMarketDataEngine state → AutoTrade state
     _ZERODHA_TO_AT = {
         "AUTHENTICATING": ENGINE_STATE_AUTHENTICATING,
@@ -1237,16 +1240,23 @@ async def _engine_lifecycle():
                     break
                 await asyncio.sleep(1)
 
+        # Wait a brief moment for any initial disconnection that may immediately
+        # follow connection (race between Twisted thread callbacks)
         if not _zerodha_engine or not _zerodha_engine.is_ws_connected:
-            _engine_state = ENGINE_STATE_ERROR
-            _engine_running = False
-            _analysis_enabled = False
-            error_detail = "no_zerodha_engine" if not _zerodha_engine else "ws_not_connected"
-            log_error("AutoTrade: Zerodha engine failed to connect",
-                      reason=error_detail,
-                      zerodha_running=_zerodha_engine.is_running if _zerodha_engine else False,
-                      zerodha_state=_zerodha_engine.state if _zerodha_engine else "N/A")
-            return
+            for _ in range(10):
+                await asyncio.sleep(0.5)
+                if _zerodha_engine and _zerodha_engine.is_ws_connected:
+                    break
+            else:
+                _engine_state = ENGINE_STATE_ERROR
+                _engine_running = False
+                _analysis_enabled = False
+                error_detail = "no_zerodha_engine" if not _zerodha_engine else "ws_not_connected"
+                log_error("AutoTrade: Zerodha engine failed to connect",
+                          reason=error_detail,
+                          zerodha_running=_zerodha_engine.is_running if _zerodha_engine else False,
+                          zerodha_state=_zerodha_engine.state if _zerodha_engine else "N/A")
+                return
 
         # Step 2: Mirror Zerodha engine state through warmup → DATA_READY
         for _ in range(120):
