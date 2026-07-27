@@ -512,11 +512,23 @@ class ZerodhaMarketDataEngine:
             )
 
             await self._ws_client.connect()
-            self._ws_connected = True
 
-            await self._publish_event(KITE_WS_CONNECTED, {})
-            log_info("ZerodhaMarketDataEngine: WebSocket connected")
-            return True
+            # Wait briefly for the actual WebSocket handshake (threaded connect returns
+            # immediately, the on_connect callback fires asynchronously).
+            for _ in range(30):
+                if self._ws_client.is_connected():
+                    break
+                await asyncio.sleep(0.5)
+
+            if self._ws_client.is_connected():
+                self._ws_connected = True
+                await self._publish_event(KITE_WS_CONNECTED, {})
+                log_info("ZerodhaMarketDataEngine: WebSocket connected")
+                return True
+            else:
+                log_warn("ZerodhaMarketDataEngine: WebSocket connect timed out")
+                self._ws_connected = False
+                return False
 
         except Exception as e:
             self._ws_connected = False

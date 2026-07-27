@@ -101,9 +101,10 @@ class KiteWebSocketClient:
                 self._ticker.reconnect_max_tries = MAX_RECONNECT_ATTEMPTS
                 self._ticker.reconnect_max_delay = RECONNECT_MAX_DELAY
 
-                # Connect in a thread (KiteTicker is not async)
-                loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, self._ticker.connect)
+                # Connect with threaded=True so KiteTicker runs Twisted reactor
+                # in a dedicated daemon thread with installSignalHandlers=False.
+                # This avoids the "signal only works in main thread" error on Windows.
+                self._ticker.connect(threaded=True)
                 self._running = True
                 self._connection_time = datetime.now(timezone.utc)
                 self._stats["connection_time"] = self._connection_time.isoformat()
