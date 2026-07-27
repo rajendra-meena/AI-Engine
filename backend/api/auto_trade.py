@@ -163,6 +163,25 @@ ENGINE_STATE_STOPPING = "STOPPING"
 _SYMBOL_ANALYSIS_COOLDOWN_S: float = 10.0
 _last_analysis_times: dict[str, float] = {}
 
+# Scan metrics (cumulative, separate from candidates/trades)
+_scan_metrics = {
+    "total_scan_cycles": 0,
+    "symbols_scanned_current": 0,
+    "symbols_scanned_total": 0,
+    "analyses_completed_total": 0,
+    "no_trade_decisions_total": 0,
+    "candidates_found_total": 0,
+    "risk_blocked_total": 0,
+    "paper_trades_created_total": 0,
+    "last_scan_started_at": None,   # ISO timestamp
+    "last_scan_completed_at": None, # ISO timestamp
+    "last_analysis_at": None,       # ISO timestamp
+}
+
+# Analysis status reason (visible in Current Market Analysis)
+_analysis_blocked_reason: str | None = None
+_analysis_blocked_category: str = ""  # "WAITING", "WARMING", "BLOCKED", "ANALYSED"
+
 # Active signals (keyed by symbol — one active signal per symbol)
 _active_signals: dict[str, TradeSignal] = {}
 
@@ -514,6 +533,43 @@ async def _run_fresh_analysis(symbol: str, analysis_cycle_id: str = "") -> dict[
     return result
 
 
+def _update_analysis_status_from_symbol(symbol: str, reason: str | None, category: str):
+    """Update the current analysis blocked reason for a symbol."""
+    global _analysis_blocked_reason, _analysis_blocked_category
+    _analysis_blocked_reason = reason
+    _analysis_blocked_category = category
+
+
+def _update_analysis_status_from_results(candidates: list[dict]):
+    """Derive analysis status from scan candidates."""
+    global _analysis_blocked_reason, _analysis_blocked_category
+
+    # Check if any candidate was fully analysed (had AI data)
+    has_analysis = any(c.get("direction") not in ("NONE",) and c.get("opportunity_score", 0) > 0 for c in candidates)
+    has_no_trade = any(c.get("direction") in ("WAIT", "NO_TRADE") for c in candidates)
+    has_candidate = any(c.get("opportunity_score", 0) >= 50 for c in candidates)
+    risk_blocked = any(c.get("reject_reasons") for c in candidates if c.get("opportunity_score", 0) >= 50)
+
+    if not candidates:
+        _analysis_blocked_category = "WAITING"
+        _analysis_blocked_reason = "NO_SYMBOLS_SCANNED_YET"
+    elif has_candidate and not risk_blocked:
+        _analysis_blocked_category = "ANALYSED"
+        _analysis_blocked_reason = "CANDIDATE_FOUND"
+    elif risk_blocked:
+        _analysis_blocked_category = "ANALYSED"
+        _analysis_blocked_reason = "RISK_BLOCKED"
+    elif has_no_trade:
+        _analysis_blocked_category = "ANALYSED"
+        _analysis_blocked_reason = "NO_VALID_SIGNAL"
+    elif has_analysis:
+        _analysis_blocked_category = "ANALYSED"
+        _analysis_blocked_reason = "STRATEGY_CONDITIONS_NOT_MET"
+    else:
+        _analysis_blocked_category = "WAITING"
+        _analysis_blocked_reason = "WAITING_FOR_AI_DECISION"
+
+
 async def _handle_candle_closed(event: BusEvent):
     """
     Primary trigger: a candle has closed.
@@ -522,7 +578,7 @@ async def _handle_candle_closed(event: BusEvent):
     Signal suppression: candles with allow_signal_generation=false
     (e.g. warmup historical candles) do not trigger analysis.
     """
-    global _engine_state
+    global _engine_state, _analysis_blocked_reason, _analysis_blocked_category, _scan_metrics
     if not _engine_running or _engine_paused or not _analysis_enabled:
         return
 
@@ -549,6 +605,9 @@ async def _handle_candle_closed(event: BusEvent):
         if _zerodha_engine and _zerodha_engine.state not in ("DATA_READY", "SCANNING"):
             log_info("AutoTrade: candle closed but engine not DATA_READY yet",
                      symbol=symbol, engine_state=_zerodha_engine.state)
+            _update_analysis_status_from_symbol(
+                symbol, f"ENGINE_NOT_DATA_READY: state={_zerodha_engine.state}", "WARMING"
+            )
             return
 
         # ── Idempotency gate ──
@@ -564,18 +623,55 @@ async def _handle_candle_closed(event: BusEvent):
         # Extract analysis_cycle_id from candle event for idempotent execution
         analysis_cycle_id = payload.get("analysis_cycle_id", "")
 
+        # Update status: about to analyse
+        _update_analysis_status_from_symbol(symbol, "ANALYSIS_IN_PROGRESS", "ANALYSING")
+
         # Run fresh analysis
         result = await _run_fresh_analysis(symbol, analysis_cycle_id=analysis_cycle_id)
         if result:
             _engine_state = ENGINE_STATE_SCANNING
+            _scan_metrics["last_analysis_at"] = datetime.now(timezone.utc).isoformat()
+            _scan_metrics["analyses_completed_total"] += 1
+
+            direction = result.get("direction", "NONE")
+            if direction in ("WAIT", "NO_TRADE"):
+                _scan_metrics["no_trade_decisions_total"] += 1
+                _update_analysis_status_from_symbol(
+                    symbol,
+                    f"NO_TRADE: {result.get('reject_reasons', ['No reason'])[0] if result.get('reject_reasons') else 'Strategy conditions not met'}",
+                    "ANALYSED"
+                )
+            elif direction in ("BUY", "SELL"):
+                score = result.get("opportunity_score", 0)
+                if result.get("reject_reasons"):
+                    _scan_metrics["risk_blocked_total"] += 1
+                    _update_analysis_status_from_symbol(
+                        symbol,
+                        f"RISK_BLOCKED: {result['reject_reasons'][0]}",
+                        "ANALYSED"
+                    )
+                else:
+                    _scan_metrics["candidates_found_total"] += 1
+                    _update_analysis_status_from_symbol(
+                        symbol,
+                        f"CANDIDATE_FOUND: {direction} score={score}",
+                        "ANALYSED"
+                    )
+
             if result.get("execution"):
+                _scan_metrics["paper_trades_created_total"] += 1
                 log_info("AutoTrade: trade executed from candle close",
                          symbol=symbol,
                          direction=result.get("direction"),
                          score=result.get("opportunity_score"),
                          exec_status=result["execution"].get("status", "unknown"))
+        else:
+            _update_analysis_status_from_symbol(
+                symbol, "ANALYSIS_SKIPPED: symbol cooled down or no AI data", "WAITING"
+            )
 
     except Exception as e:
+        _update_analysis_status_from_symbol(symbol, f"ANALYSIS_ERROR: {e}", "BLOCKED")
         log_error("AutoTrade: candle closed handler error", error=str(e))
 
 
@@ -1042,8 +1138,11 @@ async def _health_scan():
     Analysis is now driven by CANDLE_CLOSED events.
     This scan only checks for candidates with fresh data and runs a
     periodic readiness check.
+
+    Increments scan metrics so the dashboard shows activity even
+    when no trade is found.
     """
-    global _engine_state, _last_workspace_snapshot
+    global _engine_state, _last_workspace_snapshot, _scan_metrics
 
     try:
         symbols_scanned = 0
@@ -1051,12 +1150,15 @@ async def _health_scan():
         best_candidate = None
 
         symbols = list_canonical_names()
+        _scan_metrics["total_scan_cycles"] += 1
+        _scan_metrics["last_scan_started_at"] = datetime.now(timezone.utc).isoformat()
 
         for symbol in symbols:
             if not _engine_running or _engine_paused:
                 return
 
             symbols_scanned += 1
+            _scan_metrics["symbols_scanned_total"] += 1
 
             # Get AI snapshot (latest from event-driven pipeline)
             try:
@@ -1075,6 +1177,27 @@ async def _health_scan():
             result = _build_opportunity_score(symbol, ai_snap, regime_snap)
             candidates.append(result)
 
+            # Increment analysis counter
+            if ai_snap or result.get("direction") != "NONE":
+                _scan_metrics["analyses_completed_total"] += 1
+            dir_ = result.get("direction", "NONE")
+            if dir_ == "WAIT":
+                _scan_metrics["no_trade_decisions_total"] += 1
+            elif dir_ == "NO_TRADE":
+                _scan_metrics["no_trade_decisions_total"] += 1
+            elif dir_ in ("BUY", "SELL"):
+                if result.get("reject_reasons"):
+                    _scan_metrics["risk_blocked_total"] += 1
+
+            # Candidate found?
+            if result.get("opportunity_score", 0) >= 50 and dir_ in ("BUY", "SELL"):
+                _scan_metrics["candidates_found_total"] += 1
+
+        _scan_metrics["symbols_scanned_current"] = symbols_scanned
+
+        # Update analysis status based on results
+        _update_analysis_status_from_results(candidates)
+
         # Sort by score descending
         candidates.sort(key=lambda c: c["opportunity_score"], reverse=True)
 
@@ -1091,6 +1214,8 @@ async def _health_scan():
             candidates=candidates,
             best_candidate=best_candidate,
         )
+
+        _scan_metrics["last_scan_completed_at"] = datetime.now(timezone.utc).isoformat()
 
     except Exception as e:
         log_warn("AutoTrade: health scan error", error=str(e))
@@ -1144,9 +1269,14 @@ def _build_workspace_snapshot(
             "mode": _get_runtime_mode(),
         },
         "readiness": _check_mandatory_systems(),
+        "analysis_status": {
+            "category": _analysis_blocked_category or "WAITING",
+            "reason": _analysis_blocked_reason or "WAITING_FOR_FIRST_LIVE_CANDLE",
+        },
+        "metrics": dict(_scan_metrics),
         "scan": {
             "symbols_scanned": symbols_scanned,
-            "candidates_found": len([c for c in candidates if c.get("opportunitude_score", 0) > 0]) if candidates else 0,
+            "candidates_found": len([c for c in candidates if c.get("opportunity_score", 0) >= 50]) if candidates else 0,
             "last_scan_time": datetime.now(timezone.utc).isoformat(),
         },
         "candidates": candidates[:3] if candidates else [],
@@ -1203,10 +1333,13 @@ async def _engine_lifecycle():
 
     Analysis is blocked until DATA_READY.
     """
-    global _engine_state, _analysis_enabled, _engine_running, _engine_paused
+    global _engine_state, _analysis_enabled, _engine_running, _engine_paused, _analysis_blocked_reason, _analysis_blocked_category
 
     # Reset analysis_enabled — guards against stale False from previous run
     _analysis_enabled = True
+    # Set initial analysis status
+    _analysis_blocked_category = "WARMING"
+    _analysis_blocked_reason = "HISTORICAL_WARMUP_IN_PROGRESS"
 
     # State mapping: ZerodhaMarketDataEngine state → AutoTrade state
     _ZERODHA_TO_AT = {
@@ -1307,66 +1440,111 @@ async def auto_trade_diagnostics():
     Returns runtime state of every pipeline stage, including task health,
     WebSocket status, tick counts, scan loop metrics, and blocked reasons.
     Does not expose secrets.
-    """
-    now = datetime.now(timezone.utc).isoformat()
 
-    # Engine task health
-    engine_task_health = {
-        "running": _engine_running,
+    Task semantics:
+      lifecycle_task  — one-time startup initialisation (Zerodha auth,
+                       instrument loading, warmup, event handler registration).
+                       Runs once, then completes. NOT the ongoing scan.
+      health_watchdog — 30s periodic health check loop (ongoing).
+      No separate scan_task exists — analysis is event-driven via CANDLE_CLOSED.
+      The 'scan_loop' section shows the event-driven analysis pipeline status.
+    """
+    now_ts = datetime.now(timezone.utc).isoformat()
+
+    # ── Lifecycle task (one-time startup, completes after init) ──
+    lifecycle_health: dict[str, Any] = {
+        "type": "one_time_startup",
         "created": _engine_task is not None,
         "done": _engine_task.done() if _engine_task else None,
         "cancelled": _engine_task.cancelled() if _engine_task and _engine_task.done() else None,
         "exception": None,
+        "started_at": None,
     }
     if _engine_task and _engine_task.done() and not _engine_task.cancelled():
         try:
             _engine_task.result()
         except Exception as ex:
-            engine_task_health["exception"] = str(ex)
+            lifecycle_health["exception"] = str(ex)
 
-    # Health watchdog task health
-    watchdog_health = {
+    # ── Health watchdog task (ongoing loop) ──
+    watchdog_health: dict[str, Any] = {
+        "type": "ongoing_loop",
+        "interval_seconds": 30,
         "created": _health_watchdog_task is not None,
         "done": _health_watchdog_task.done() if _health_watchdog_task else None,
+        "cancelled": _health_watchdog_task.cancelled() if _health_watchdog_task and _health_watchdog_task.done() else None,
+        "exception": None,
     }
+    if _health_watchdog_task and _health_watchdog_task.done() and not _health_watchdog_task.cancelled():
+        try:
+            _health_watchdog_task.result()
+        except Exception as ex:
+            watchdog_health["exception"] = str(ex)
 
-    # Scan loop info
-    scan_loop_info = {
-        "running": _engine_running and not _engine_paused,
-        "state": _engine_state,
+    # ── Scan/analysis pipeline status (event-driven) ──
+    pipeline_info: dict[str, Any] = {
+        "type": "event_driven",
+        "primary_trigger": "CANDLE_CLOSED",
+        "engine_state": _engine_state,
         "analysis_enabled": _analysis_enabled,
-        "last_workspace_snapshot_exists": _last_workspace_snapshot is not None,
+        "running": _engine_running and not _engine_paused,
+        "event_handlers_registered": False,
+        "blocked_reason": _analysis_blocked_reason,
+        "blocked_category": _analysis_blocked_category,
     }
+    if _event_bus:
+        # Check if our handlers are registered on the EventBus
+        try:
+            subs = getattr(_event_bus, "_subscribers", {})
+            pipeline_info["event_handlers_registered"] = (
+                "candle_closed" in subs or
+                any("auto_trade" in str(s) for subs_list in subs.values() for s in subs_list)
+            )
+        except Exception:
+            pass
 
-    # Market data info
+    # ── Market data info (tick source classification) ──
     ws_connected = False
     subscribed_tokens = 0
     ticks_received = 0
+    ws_ticks_received = 0
     last_tick_at = None
-    tick_counts_per_symbol = {}
     if _zerodha_engine:
         ws_connected = _zerodha_engine.is_ws_connected
         subscribed_tokens = len(getattr(_zerodha_engine, "_subscribed_tokens", []))
         stats = getattr(_zerodha_engine, "_stats", {})
         ticks_received = stats.get("total_ticks_received", 0)
         last_tick_at = stats.get("last_tick_time")
-        # Per-symbol tick counts could be added here
+        # Distinguish WS ticks from quote/historical data
+        # (the engine only gets ticks from WebSocket; quote snapshots
+        # are fetched via REST API and don't increment this counter)
+        ws_ticks_received = ticks_received
 
-    market_data_info = {
+    market_data_info: dict[str, Any] = {
         "provider": "ZERODHA_KITE",
         "websocket_connected": ws_connected,
         "zerodha_state": _zerodha_engine.state if _zerodha_engine else "N/A",
         "zerodha_running": _zerodha_engine.is_running if _zerodha_engine else False,
         "subscribed_symbols": subscribed_tokens,
-        "ticks_received": ticks_received,
+        "websocket_ticks_received": ws_ticks_received,
+        "quote_api_snapshots_received": 0,  # Not currently tracked
+        "historical_candles_loaded": 0,     # Tracked in HistoricalWarmupEngine
         "last_tick_at": last_tick_at,
+        "live_tick_verified": ws_ticks_received > 0,
     }
+    # Attempt to get warmup candle count
+    try:
+        if _zerodha_engine:
+            we = getattr(_zerodha_engine, "_warmup_engine", None)
+            if we and hasattr(we, "stats"):
+                market_data_info["historical_candles_loaded"] = we.stats.get("total_candles_loaded", 0)
+    except Exception:
+        pass
 
-    # Freshness summary
-    freshness_summary = {}
+    # ── Freshness summary ──
+    freshness_summary: dict[str, Any] = {}
     if _freshness_tracker:
         freshness_summary = _freshness_tracker.get_status_summary()
-        # Per-symbol breakdown
         symbol_states = {}
         for name in list_canonical_names():
             sf = _freshness_tracker.get(name)
@@ -1382,8 +1560,33 @@ async def auto_trade_diagnostics():
                 }
         freshness_summary["symbols"] = symbol_states
 
-    # Blocked reasons
-    blocked_reasons = []
+    # ── Warmup processing summary ──
+    warmup_info: dict[str, Any] = {
+        "status": "unknown",
+        "per_symbol": {},
+    }
+
+    # ── EventBus metrics ──
+    event_bus_info: dict[str, Any] = {
+        "status": "unknown",
+    }
+    if _event_bus:
+        try:
+            stats = _event_bus.get_stats()
+            event_bus_info = {
+                "queue_size": stats.get("queue_size", "?"),
+                "queue_capacity": stats.get("max_queue_size", "?"),
+                "total_published": stats.get("total_published", 0),
+                "total_dispatched": stats.get("total_dispatched", 0),
+                "total_errors": stats.get("total_errors", 0),
+                "total_dropped": stats.get("total_dropped", 0),
+                "subscriber_count": stats.get("subscriber_count", 0),
+            }
+        except Exception as e:
+            event_bus_info["error"] = str(e)
+
+    # ── Blocked reasons ──
+    blocked_reasons: list[str] = []
     try:
         checks = _check_mandatory_systems()
         for system, status in checks.items():
@@ -1393,17 +1596,19 @@ async def auto_trade_diagnostics():
         blocked_reasons.append(f"readiness_check_error={e}")
 
     return {
-        "timestamp": now,
+        "timestamp": now_ts,
         "analysis_enabled": _analysis_enabled,
         "engine_running": _engine_running,
         "engine_state": _engine_state,
-        "engine_task": engine_task_health,
-        "watchdog": watchdog_health,
-        "scan_loop": scan_loop_info,
+        "lifecycle_task": lifecycle_health,
+        "health_watchdog": watchdog_health,
+        "pipeline": pipeline_info,
         "market_data": market_data_info,
+        "warmup": warmup_info,
+        "event_bus": event_bus_info,
         "freshness": freshness_summary,
+        "metrics": dict(_scan_metrics),
         "blocked_reasons": blocked_reasons,
-        "event_handlers_registered": len(_event_subscriptions) > 0 if hasattr(_event_subscriptions, '__len__') else False,
     }
 
 

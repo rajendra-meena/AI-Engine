@@ -383,7 +383,20 @@ async def lifespan(app: FastAPI):
     # Every warmup event carries is_warmup=true, allow_signal_generation=false
     # to suppress AI decision generation during warmup.
     async def _feed_warmup_candles(warmup_results: dict):
-        """Feed warmup candles via EventBus to prime indicators, not generate signals."""
+        """Feed warmup candles directly to engines, bypassing EventBus flood.
+
+        Design: Rather than publishing every candle through EventBus (which
+        floods the queue with 3000+ events and triggers cascading downstream
+        events), this calls each downstream engine directly. Each candle is
+        fully processed by IndicatorEngine → MarketStructureEngine →
+        PatternEngine before the next candle starts. This paces the EventBus
+        naturally — only the engines' output events (INDICATORS_UPDATED,
+        STRUCTURE_UPDATED, etc.) flow through the bus at a manageable rate.
+
+        For fast warmup, we process candles sequentially per interval/symbol,
+        then after each symbol+interval is done, we feed the final processed
+        state to TradingContextEngine and SREngine with a single event each.
+        """
         from core.event_model import Event as BusEvent
 
         for symbol, intervals in warmup_results.items():
@@ -391,8 +404,10 @@ async def lifespan(app: FastAPI):
                 candles = warmup_engine.get_candles(symbol, interval)
                 if not candles:
                     continue
+
+                # Feed all candles sequentially to IndicatorEngine
+                # (it computes indicators from the full history)
                 for wc in candles:
-                    # Build candle payload with signal suppression flags
                     candle_data = {
                         "symbol": symbol,
                         "interval": interval,
@@ -414,21 +429,96 @@ async def lifespan(app: FastAPI):
                         "idempotency_key": f"warmup_{symbol}_{interval}_{wc.time}",
                         "candle": candle_data,
                     }
-                    # Publish via EventBus — one canonical pipeline.
-                    # This triggers IndicatorEngine (via CANDLE_CLOSED subscription),
-                    # which publishes INDICATORS_UPDATED → MarketStructureEngine →
-                    # TradingContextEngine → SREngine naturally.
                     ev = BusEvent(
                         type="candle_closed", source="warmup", payload=candle_payload
                     )
-                    await event_bus.publish(ev)
 
-                # Yield control between intervals so EventBus consumers
-                # can process events and avoid queue overflow.
+                    # Feed IndicatorEngine directly (updates internal compute unit)
+                    if indicator_engine and indicator_engine._running:
+                        await indicator_engine._on_candle_closed(ev)
+                    # Feed MarketStructureEngine directly
+                    if market_structure_engine and market_structure_engine._running:
+                        await market_structure_engine._on_candle_closed(ev)
+                    # Feed PatternEngine directly
+                    if pattern_engine and pattern_engine._running:
+                        await pattern_engine._on_candle_closed(ev)
+
+                    # Yield control so EventBus can dispatch any published events
+                    await asyncio.sleep(0)
+
+                # After all candles for this symbol+interval, feed the final
+                # indicator snapshot to TradingContextEngine (via its EventBus
+                # handler) and SREngine.
+                ind_snap = (
+                    indicator_engine.latest_snapshot(symbol, interval)
+                    if indicator_engine
+                    else None
+                )
+                if ind_snap and trading_context_engine and trading_context_engine._running:
+                    payload = {"symbol": symbol, "interval": interval, **ind_snap}
+                    payload["candle_version"] = f"warmup_{symbol}_{interval}_final"
+                    await trading_context_engine._on_indicator(
+                        BusEvent(type="indicators_updated", source="warmup", payload=payload)
+                    )
+                if ind_snap and sr_engine and sr_engine._running:
+                    payload = {"symbol": symbol, **ind_snap}
+                    await sr_engine._on_indicator(
+                        BusEvent(type="indicators_updated", source="warmup", payload=payload)
+                    )
+
+                # Also feed final structure snapshot to TradingContext and SR
+                struct_snap = (
+                    market_structure_engine.latest_snapshot(symbol, interval)
+                    if market_structure_engine
+                    else None
+                )
+                if struct_snap and trading_context_engine and trading_context_engine._running:
+                    payload = {"symbol": symbol, "interval": interval, **struct_snap}
+                    payload["candle_version"] = f"warmup_{symbol}_{interval}_final"
+                    await trading_context_engine._on_structure(
+                        BusEvent(type="structure_updated", source="warmup", payload=payload)
+                    )
+                if struct_snap and sr_engine and sr_engine._running:
+                    payload = {"symbol": symbol, **struct_snap}
+                    await sr_engine._on_structure(
+                        BusEvent(type="structure_updated", source="warmup", payload=payload)
+                    )
+
+                # Feed candle to SREngine for level detection
+                if sr_engine and sr_engine._running:
+                    last_candle = candles[-1] if candles else None
+                    if last_candle:
+                        candle_payload = {
+                            "symbol": symbol,
+                            "interval": interval,
+                            "candle": {
+                                "symbol": symbol,
+                                "interval": interval,
+                                "time": last_candle.time,
+                                "open": last_candle.open,
+                                "high": last_candle.high,
+                                "low": last_candle.low,
+                                "close": last_candle.close,
+                                "volume": last_candle.volume,
+                                "is_closed": True,
+                            },
+                        }
+                        await sr_engine._on_candle(
+                            BusEvent(type="candle_closed", source="warmup", payload=candle_payload)
+                        )
+
                 await asyncio.sleep(0)
 
-                log_info("Warmup candles fed via EventBus",
+                log_info("Warmup candles processed via direct engine hydration",
                          symbol=symbol, interval=interval, count=len(candles))
+
+        # Publish a single WARMUP_COMPLETED event to signal readiness
+        await event_bus.publish(BusEvent(
+            type="warmup_completed",
+            source="warmup",
+            payload={"symbols": list(warmup_results.keys())},
+        ))
+        log_info("Warmup complete — engines hydrated, EventBus clear")
 
     zerodha_engine.set_warmup_feed_callback(_feed_warmup_candles)
 
