@@ -173,6 +173,10 @@ class ZerodhaMarketDataEngine:
         self._running = False
         self._tick_callback: Callable | None = None
 
+        # Store the asyncio event loop for cross-thread operations
+        # (KiteTicker callbacks fire from the Twisted reactor thread)
+        self._loop: asyncio.AbstractEventLoop | None = None
+
         # Historical warmup
         self._warmup_engine: HistoricalWarmupEngine | None = None
         self._warmup_feed_callback: Callable | None = None
@@ -266,6 +270,10 @@ class ZerodhaMarketDataEngine:
         self._stats["start_time"] = _now_str()
 
         try:
+            # Capture the running event loop for cross-thread tick processing
+            # (KiteTicker callbacks fire from the Twisted reactor thread)
+            self._loop = asyncio.get_running_loop()
+
             # Step 1: Authenticate
             self._set_state(STATE_AUTHENTICATING)
             if not await self._authenticate():
@@ -664,13 +672,18 @@ class ZerodhaMarketDataEngine:
     # ── Tick handling ──
 
     def _on_incoming_tick(self, tick: Tick):
-        """Called by KiteWebSocketClient for each normalized tick."""
+        """Called by KiteWebSocketClient for each normalized tick.
+
+        NOTE: This runs on the Twisted reactor thread, NOT the asyncio event loop.
+        All async operations must be scheduled via self._loop.call_soon_threadsafe()
+        to the asyncio event loop that owns this engine.
+        """
         try:
             self._stats["total_ticks_received"] += 1
             self._stats["last_tick_time"] = _now_str()
             self._stats["last_tick_symbol"] = tick.symbol
 
-            # Update freshness tracker
+            # Update freshness tracker (thread-safe)
             instrument_token = 0
             tradingsymbol = tick.symbol
             exchange = getattr(tick, "exchange", "NSE") or "NSE"
@@ -694,9 +707,8 @@ class ZerodhaMarketDataEngine:
                 exchange_time=tick.timestamp.isoformat() if hasattr(tick.timestamp, "isoformat") else str(tick.timestamp),
             )
 
-            # Forward to TickEngine
+            # Forward to TickEngine via the event loop
             if self._tick_callback:
-                # Create resolved tick with correct symbol name
                 resolved_tick = Tick(
                     symbol=symbol_name,
                     price=tick.price,
@@ -707,17 +719,25 @@ class ZerodhaMarketDataEngine:
                     provider="zerodha",
                     exchange=exchange,
                 )
-                self._tick_callback(resolved_tick)
+                if self._loop and self._loop.is_running():
+                    self._loop.call_soon_threadsafe(
+                        lambda: self._tick_callback(resolved_tick)  # type: ignore[operator]
+                    )
 
-            # Publish live tick event
-            asyncio.ensure_future(
-                self._publish_event(LIVE_TICK_RECEIVED, {
-                    "symbol": symbol_name,
-                    "instrument_token": instrument_token,
-                    "price": tick.price,
-                    "timestamp": _now_str(),
-                })
-            )
+            # Publish live tick event via the event loop
+            loop = self._loop
+            if loop and loop.is_running():
+                loop.call_soon_threadsafe(
+                    lambda: asyncio.ensure_future(
+                        self._publish_event(LIVE_TICK_RECEIVED, {
+                            "symbol": symbol_name,
+                            "instrument_token": instrument_token,
+                            "price": tick.price,
+                            "timestamp": _now_str(),
+                        }),
+                        loop=loop,
+                    )
+                )
 
             # Transition through state machine on first live tick
             # CONNECTED → WAITING_FOR_LIVE_TICKS → RECEIVING_LIVE_TICKS → DATA_READY
