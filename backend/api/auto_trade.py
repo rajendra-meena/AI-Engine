@@ -1008,7 +1008,7 @@ async def _health_watchdog_loop():
     This loop verifies engine health, checks for stale data conditions,
     and transitions states as needed.
     """
-    global _engine_state
+    global _engine_state, _engine_running
     while _engine_running:
         try:
             await asyncio.sleep(30)
@@ -1203,7 +1203,7 @@ async def _engine_lifecycle():
 
     Analysis is blocked until DATA_READY.
     """
-    global _engine_state, _analysis_enabled
+    global _engine_state, _analysis_enabled, _engine_running, _engine_paused
 
     # Reset analysis_enabled — guards against stale False from previous run
     _analysis_enabled = True
@@ -1298,6 +1298,113 @@ async def _engine_lifecycle():
 
 
 # ── API Endpoints ──
+
+
+@router.get("/api/auto-trade/diagnostics")
+async def auto_trade_diagnostics():
+    """Get detailed pipeline diagnostics for the auto-trade system.
+
+    Returns runtime state of every pipeline stage, including task health,
+    WebSocket status, tick counts, scan loop metrics, and blocked reasons.
+    Does not expose secrets.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+
+    # Engine task health
+    engine_task_health = {
+        "running": _engine_running,
+        "created": _engine_task is not None,
+        "done": _engine_task.done() if _engine_task else None,
+        "cancelled": _engine_task.cancelled() if _engine_task and _engine_task.done() else None,
+        "exception": None,
+    }
+    if _engine_task and _engine_task.done() and not _engine_task.cancelled():
+        try:
+            _engine_task.result()
+        except Exception as ex:
+            engine_task_health["exception"] = str(ex)
+
+    # Health watchdog task health
+    watchdog_health = {
+        "created": _health_watchdog_task is not None,
+        "done": _health_watchdog_task.done() if _health_watchdog_task else None,
+    }
+
+    # Scan loop info
+    scan_loop_info = {
+        "running": _engine_running and not _engine_paused,
+        "state": _engine_state,
+        "analysis_enabled": _analysis_enabled,
+        "last_workspace_snapshot_exists": _last_workspace_snapshot is not None,
+    }
+
+    # Market data info
+    ws_connected = False
+    subscribed_tokens = 0
+    ticks_received = 0
+    last_tick_at = None
+    tick_counts_per_symbol = {}
+    if _zerodha_engine:
+        ws_connected = _zerodha_engine.is_ws_connected
+        subscribed_tokens = len(getattr(_zerodha_engine, "_subscribed_tokens", []))
+        stats = getattr(_zerodha_engine, "_stats", {})
+        ticks_received = stats.get("total_ticks_received", 0)
+        last_tick_at = stats.get("last_tick_time")
+        # Per-symbol tick counts could be added here
+
+    market_data_info = {
+        "provider": "ZERODHA_KITE",
+        "websocket_connected": ws_connected,
+        "zerodha_state": _zerodha_engine.state if _zerodha_engine else "N/A",
+        "zerodha_running": _zerodha_engine.is_running if _zerodha_engine else False,
+        "subscribed_symbols": subscribed_tokens,
+        "ticks_received": ticks_received,
+        "last_tick_at": last_tick_at,
+    }
+
+    # Freshness summary
+    freshness_summary = {}
+    if _freshness_tracker:
+        freshness_summary = _freshness_tracker.get_status_summary()
+        # Per-symbol breakdown
+        symbol_states = {}
+        for name in list_canonical_names():
+            sf = _freshness_tracker.get(name)
+            if sf:
+                symbol_states[name] = {
+                    "tick_freshness": sf.tick_freshness,
+                    "candle_freshness": sf.candle_freshness,
+                    "indicator_freshness": sf.indicator_freshness,
+                    "regime_freshness": sf.regime_freshness,
+                    "ai_freshness": sf.ai_freshness,
+                    "overall": sf.overall_freshness,
+                    "last_tick": sf.last_tick_receipt,
+                }
+        freshness_summary["symbols"] = symbol_states
+
+    # Blocked reasons
+    blocked_reasons = []
+    try:
+        checks = _check_mandatory_systems()
+        for system, status in checks.items():
+            if status in ("BLOCKED", "DEGRADED", "OFFLINE"):
+                blocked_reasons.append(f"{system}={status}")
+    except Exception as e:
+        blocked_reasons.append(f"readiness_check_error={e}")
+
+    return {
+        "timestamp": now,
+        "analysis_enabled": _analysis_enabled,
+        "engine_running": _engine_running,
+        "engine_state": _engine_state,
+        "engine_task": engine_task_health,
+        "watchdog": watchdog_health,
+        "scan_loop": scan_loop_info,
+        "market_data": market_data_info,
+        "freshness": freshness_summary,
+        "blocked_reasons": blocked_reasons,
+        "event_handlers_registered": len(_event_subscriptions) > 0 if hasattr(_event_subscriptions, '__len__') else False,
+    }
 
 
 @router.get("/api/auto-trade/workspace")
