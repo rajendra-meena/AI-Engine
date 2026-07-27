@@ -484,7 +484,9 @@ class ZerodhaMarketDataEngine:
             return False
 
         api_key = self._kite_provider.auth.api_key
-        access_token = os.getenv("KITE_ACCESS_TOKEN", "")
+        # Use the KiteProvider's resolved access token (env var → file restore → auth)
+        kite = self._kite_provider.auth.kite
+        access_token = kite.access_token if kite else os.getenv("KITE_ACCESS_TOKEN", "")
 
         if not api_key or not access_token:
             log_error("ZerodhaMarketDataEngine: missing credentials for WS")
@@ -905,9 +907,12 @@ class ZerodhaMarketDataEngine:
                 if self._ws_client:
                     self._ws_client.disconnect()
 
+                ws_api_key = os.getenv("KITE_API_KEY", "")
+                kite = self._kite_provider.auth.kite if self._kite_provider else None
+                ws_token = kite.access_token if kite else os.getenv("KITE_ACCESS_TOKEN", "")
                 self._ws_client = KiteWebSocketClient(
-                    api_key=os.getenv("KITE_API_KEY", ""),
-                    access_token=os.getenv("KITE_ACCESS_TOKEN", ""),
+                    api_key=ws_api_key,
+                    access_token=ws_token,
                     tick_callback=self._on_incoming_tick,
                 )
                 await self._ws_client.connect()
