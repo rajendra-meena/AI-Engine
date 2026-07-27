@@ -1240,7 +1240,11 @@ async def _engine_lifecycle():
             _engine_state = ENGINE_STATE_ERROR
             _engine_running = False
             _analysis_enabled = False
-            log_error("AutoTrade: Zerodha engine failed to connect")
+            error_detail = "no_zerodha_engine" if not _zerodha_engine else "ws_not_connected"
+            log_error("AutoTrade: Zerodha engine failed to connect",
+                      reason=error_detail,
+                      zerodha_running=_zerodha_engine.is_running if _zerodha_engine else False,
+                      zerodha_state=_zerodha_engine.state if _zerodha_engine else "N/A")
             return
 
         # Step 2: Mirror Zerodha engine state through warmup → DATA_READY
