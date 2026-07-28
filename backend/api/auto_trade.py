@@ -1158,10 +1158,39 @@ async def _try_execute_trade(
         return _fail("EXEC_BLOCK_AI_DECISION_INVALID", f"AIDecision creation failed: {e}", exception=str(e)[:200])
     _stage("AI_DECISION_CREATED")
 
+    # ── Option Execution Plan (before TradePlanner, before Risk) ──
+    # When option buying is active, build the option plan FIRST so that
+    # risk validation uses premium costs, not spot notional.
+    option_plan = None
+    try:
+        from execution.execution_config import is_option_buying
+        if is_option_buying():
+            from execution.options.planner import OptionExecutionPlanner
+            option_plan = await OptionExecutionPlanner.execute(
+                symbol=symbol,
+                direction=direction,
+                underlying_price=market_price,
+                underlying_sl=None,
+                underlying_target=None,
+                capital=100000.0,
+                risk_percent=2.0,
+            )
+            if option_plan is not None:
+                _stage("OPTION_PLAN_CREATED",
+                       option=f"{option_plan.strike:.0f}{option_plan.option_type}",
+                       premium=option_plan.premium,
+                       lots=option_plan.lots,
+                       lot_size=option_plan.lot_size,
+                       cost=option_plan.total_cost)
+    except ImportError:
+        pass
+    except Exception as e:
+        log_warn("AutoTrade: option execution plan failed", error=str(e))
+
+    # ── Build TradePlan (option-aware or spot) ──
     planner = _planner
     if not planner:
         return _fail("EXEC_BLOCK_PLANNER_UNAVAILABLE", "TradePlanner not available")
-    _stage("TRADE_PLANNER_CALLED")
 
     snap = _snap_kwargs(ai_snap)
     _scan_metrics["last_trade_plan_input"] = {
@@ -1174,94 +1203,96 @@ async def _try_execute_trade(
         "analysis_cycle_id": analysis_cycle_id,
     }
 
-    try:
-        plan = planner.build_plan(
-            decision=decision,
-            price=market_price,
-            context_snap=snap.get("context_snap"),
-            indicator_snap=snap.get("indicator_snap"),
-            structure_snap=snap.get("structure_snap"),
-            mtf_snap=snap.get("mtf_snap"),
-            sr_snap=snap.get("sr_snap"),
-        )
-    except Exception as e:
-        import traceback
-        tb = traceback.format_exc()
-        return _fail("EXEC_EXCEPTION_TRADE_PLANNER", f"TradePlanner.build_plan exception: {e}",
-                     exception=str(e)[:200], traceback=tb[:500])
+    if option_plan is not None:
+        # ── Option path ──
+        # Use premium-based price for TradePlanner, override with option values
+        try:
+            plan = planner.build_plan(
+                decision=decision,
+                price=option_plan.premium,
+                context_snap=snap.get("context_snap"),
+                indicator_snap=snap.get("indicator_snap"),
+                structure_snap=snap.get("structure_snap"),
+                mtf_snap=snap.get("mtf_snap"),
+                sr_snap=snap.get("sr_snap"),
+            )
+        except Exception as e:
+            import traceback; tb = traceback.format_exc()
+            return _fail("EXEC_EXCEPTION_TRADE_PLANNER", f"TradePlanner exception: {e}",
+                         exception=str(e)[:200], traceback=tb[:500])
 
-    _stage("TRADE_PLANNER_RETURNED")
+        _stage("TRADE_PLANNER_RETURNED")
+        if plan is None:
+            return _fail("EXEC_BLOCK_TRADE_PLAN_NONE", "TradePlanner returned None")
 
-    if plan is None:
-        return _fail("EXEC_BLOCK_TRADE_PLAN_NONE", "TradePlanner returned None")
+        # Override with option execution values
+        plan.execution_type = "option_buying"
+        plan.option_type = option_plan.option_type
+        plan.option_strike = option_plan.strike
+        plan.option_expiry = option_plan.expiry
+        plan.option_premium = option_plan.premium
+        plan.option_lot_size = option_plan.lot_size
+        plan.option_lots = option_plan.lots
+        plan.option_execution_symbol = option_plan.execution_symbol
+        plan.underlying_entry_price = option_plan.underlying_entry
+        plan.underlying_stop_price = option_plan.underlying_sl
+        plan.underlying_target_price = option_plan.underlying_target
+        plan.position_size = option_plan.lots * option_plan.lot_size
+        plan.entry_price = option_plan.premium
+        plan.stop_price = option_plan.premium_sl
+        plan.target_price = option_plan.premium_target
+        plan.capital_required = option_plan.total_cost
 
-    _scan_metrics["last_trade_plan"] = {
-        "qualified": plan.qualified,
-        "rejection_reason": plan.rejection_reason or "",
-        "direction": plan.direction,
-        "entry_price": plan.entry_price,
-        "stop_price": plan.stop_price,
-        "target_price": plan.target_price,
-        "position_size": plan.position_size,
-        "risk_reward": plan.risk_reward,
-        "risk_status": plan.risk_status,
-        "risk_block_reason": plan.risk_block_reason or "",
-    }
+        _scan_metrics["last_trade_plan"] = {
+            "qualified": plan.qualified, "rejection_reason": plan.rejection_reason or "",
+            "direction": plan.direction, "entry_price": plan.entry_price,
+            "stop_price": plan.stop_price, "target_price": plan.target_price,
+            "position_size": plan.position_size, "risk_reward": plan.risk_reward,
+            "risk_status": plan.risk_status, "risk_block_reason": plan.risk_block_reason or "",
+            "execution_type": "option_buying",
+            "option": f"{option_plan.strike:.0f}{option_plan.option_type}",
+            "premium": option_plan.premium, "lots": option_plan.lots,
+            "lot_size": option_plan.lot_size, "total_cost": option_plan.total_cost,
+        }
+    else:
+        # ── Synthetic spot path (original) ──
+        _stage("TRADE_PLANNER_CALLED")
+        try:
+            plan = planner.build_plan(
+                decision=decision,
+                price=market_price,
+                context_snap=snap.get("context_snap"),
+                indicator_snap=snap.get("indicator_snap"),
+                structure_snap=snap.get("structure_snap"),
+                mtf_snap=snap.get("mtf_snap"),
+                sr_snap=snap.get("sr_snap"),
+            )
+        except Exception as e:
+            import traceback; tb = traceback.format_exc()
+            return _fail("EXEC_EXCEPTION_TRADE_PLANNER", f"TradePlanner exception: {e}",
+                         exception=str(e)[:200], traceback=tb[:500])
+        _stage("TRADE_PLANNER_RETURNED")
+        if plan is None:
+            return _fail("EXEC_BLOCK_TRADE_PLAN_NONE", "TradePlanner returned None")
+        _scan_metrics["last_trade_plan"] = {
+            "qualified": plan.qualified, "rejection_reason": plan.rejection_reason or "",
+            "direction": plan.direction, "entry_price": plan.entry_price,
+            "stop_price": plan.stop_price, "target_price": plan.target_price,
+            "position_size": plan.position_size, "risk_reward": plan.risk_reward,
+            "risk_status": plan.risk_status, "risk_block_reason": plan.risk_block_reason or "",
+        }
 
+    # ── Common qualification gate ──
     if not plan.qualified:
         return _fail("EXEC_BLOCK_TRADE_PLAN_REJECTED", f"TradePlan rejected: {plan.rejection_reason}",
                      plan_rejection=plan.rejection_reason)
-
     _scan_metrics["trade_plans_created_total"] = _scan_metrics.get("trade_plans_created_total", 0) + 1
 
     if plan.risk_status == "blocked":
         _scan_metrics["risk_blocked_total"] = _scan_metrics.get("risk_blocked_total", 0) + 1
         return _fail("EXEC_BLOCK_RISK_REJECTED", f"Risk blocked: {plan.risk_block_reason}",
                      risk_reason=plan.risk_block_reason)
-
     _scan_metrics["risk_approved_total"] = _scan_metrics.get("risk_approved_total", 0) + 1
-
-    # ── Option Execution Plan ──
-    # If option buying is active, convert the synthetic spot plan to option-specific values
-    try:
-        from execution.execution_config import is_option_buying
-        if is_option_buying():
-            from execution.options.planner import OptionExecutionPlanner
-            option_plan = await OptionExecutionPlanner.execute(
-                symbol=symbol,
-                direction=direction,
-                underlying_price=market_price,
-                underlying_sl=plan.stop_price,
-                underlying_target=plan.target_price,
-                capital=100000.0,
-                risk_percent=2.0,
-            )
-            if option_plan is not None:
-                # Override plan values with option-specific values
-                plan.execution_type = "option_buying"
-                plan.option_type = option_plan.option_type
-                plan.option_strike = option_plan.strike
-                plan.option_expiry = option_plan.expiry
-                plan.option_premium = option_plan.premium
-                plan.option_lot_size = option_plan.lot_size
-                plan.option_lots = option_plan.lots
-                plan.option_execution_symbol = option_plan.execution_symbol
-                plan.underlying_entry_price = option_plan.underlying_entry
-                plan.underlying_stop_price = option_plan.underlying_sl
-                plan.underlying_target_price = option_plan.underlying_target
-                plan.position_size = option_plan.lots * option_plan.lot_size
-                plan.entry_price = option_plan.premium
-                plan.stop_price = option_plan.premium_sl
-                plan.target_price = option_plan.premium_target
-                plan.capital_required = option_plan.total_cost
-                _scan_metrics["last_trade_plan"]["execution_type"] = "option_buying"
-                _scan_metrics["last_trade_plan"]["option"] = f"{option_plan.strike:.0f}{option_plan.option_type}"
-                _scan_metrics["last_trade_plan"]["premium"] = option_plan.premium
-                _scan_metrics["last_trade_plan"]["lots"] = option_plan.lots
-    except ImportError:
-        pass
-    except Exception as e:
-        log_warn("AutoTrade: option execution plan failed", error=str(e))
 
     if not _exec_gateway:
         return _fail("EXEC_BLOCK_GATEWAY_UNAVAILABLE", "ExecutionGateway not available")
