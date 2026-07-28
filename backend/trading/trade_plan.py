@@ -55,6 +55,20 @@ class TradePlan:
     direction: str = "NONE"  # Canonical: LONG, SHORT, NONE
     strategy: str = "ai_strategy"
     strategy_version: str = "1.0"
+    execution_type: str = "synthetic_spot"  # "synthetic_spot" / "option_buying"
+
+    # Option-specific fields (used when execution_type == "option_buying")
+    option_type: str | None = None
+    option_strike: float | None = None
+    option_expiry: str | None = None
+    option_premium: float | None = None
+    option_lot_size: int | None = None
+    option_lots: int | None = None
+    option_instrument_token: int | None = None
+    option_execution_symbol: str | None = None
+    underlying_entry_price: float | None = None
+    underlying_stop_price: float | None = None
+    underlying_target_price: float | None = None
 
     # Entry
     entry_price: float | None = None

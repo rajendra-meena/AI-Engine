@@ -1221,6 +1221,48 @@ async def _try_execute_trade(
 
     _scan_metrics["risk_approved_total"] = _scan_metrics.get("risk_approved_total", 0) + 1
 
+    # ── Option Execution Plan ──
+    # If option buying is active, convert the synthetic spot plan to option-specific values
+    try:
+        from execution.execution_config import is_option_buying
+        if is_option_buying():
+            from execution.options.planner import OptionExecutionPlanner
+            option_plan = await OptionExecutionPlanner.execute(
+                symbol=symbol,
+                direction=direction,
+                underlying_price=market_price,
+                underlying_sl=plan.stop_price,
+                underlying_target=plan.target_price,
+                capital=100000.0,
+                risk_percent=2.0,
+            )
+            if option_plan is not None:
+                # Override plan values with option-specific values
+                plan.execution_type = "option_buying"
+                plan.option_type = option_plan.option_type
+                plan.option_strike = option_plan.strike
+                plan.option_expiry = option_plan.expiry
+                plan.option_premium = option_plan.premium
+                plan.option_lot_size = option_plan.lot_size
+                plan.option_lots = option_plan.lots
+                plan.option_execution_symbol = option_plan.execution_symbol
+                plan.underlying_entry_price = option_plan.underlying_entry
+                plan.underlying_stop_price = option_plan.underlying_sl
+                plan.underlying_target_price = option_plan.underlying_target
+                plan.position_size = option_plan.lots * option_plan.lot_size
+                plan.entry_price = option_plan.premium
+                plan.stop_price = option_plan.premium_sl
+                plan.target_price = option_plan.premium_target
+                plan.capital_required = option_plan.total_cost
+                _scan_metrics["last_trade_plan"]["execution_type"] = "option_buying"
+                _scan_metrics["last_trade_plan"]["option"] = f"{option_plan.strike:.0f}{option_plan.option_type}"
+                _scan_metrics["last_trade_plan"]["premium"] = option_plan.premium
+                _scan_metrics["last_trade_plan"]["lots"] = option_plan.lots
+    except ImportError:
+        pass
+    except Exception as e:
+        log_warn("AutoTrade: option execution plan failed", error=str(e))
+
     if not _exec_gateway:
         return _fail("EXEC_BLOCK_GATEWAY_UNAVAILABLE", "ExecutionGateway not available")
 

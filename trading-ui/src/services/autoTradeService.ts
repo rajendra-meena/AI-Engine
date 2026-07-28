@@ -46,6 +46,14 @@ export interface CurrentMarketAnalysis {
   reject_reasons: string[]
   risk_status: string
   analysed_at: string
+  // Option execution fields (present when option_buying is active)
+  execution_type?: string
+  option_type?: string
+  option_strike?: number
+  option_expiry?: string
+  option_premium?: number
+  option_lot_size?: number
+  option_lots?: number
 }
 
 export interface OpportunityCandidate {

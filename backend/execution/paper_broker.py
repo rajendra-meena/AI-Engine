@@ -111,6 +111,18 @@ class PaperPosition:
     data_timestamp: str = ""
     entry_reason: str = ""
 
+    # Execution model fields
+    execution_type: str = "synthetic_spot"
+    option_type: str | None = None
+    option_strike: float | None = None
+    option_expiry: str | None = None
+    option_premium: float | None = None
+    option_lot_size: int | None = None
+    option_lots: int | None = None
+    underlying_symbol: str | None = None
+    underlying_entry_price: float | None = None
+    underlying_current_price: float | None = None
+
     def to_dict(self, include_diagnostics: bool = False) -> dict[str, Any]:
         d = {
             "trade_id": self.trade_id,
@@ -124,7 +136,20 @@ class PaperPosition:
             "unrealized_pnl": round(self.unrealized_pnl, 2),
             "realized_pnl": round(self.realized_pnl, 2),
             "created_at": self.created_at,
+            "execution_type": self.execution_type,
         }
+        if self.execution_type == "option_buying":
+            d.update({
+                "option_type": self.option_type,
+                "option_strike": self.option_strike,
+                "option_expiry": self.option_expiry,
+                "option_premium": self.option_premium,
+                "option_lot_size": self.option_lot_size,
+                "option_lots": self.option_lots,
+                "underlying_symbol": self.underlying_symbol,
+                "underlying_entry_price": self.underlying_entry_price,
+                "underlying_current_price": self.underlying_current_price,
+            })
         if include_diagnostics:
             d.update({
                 "decision_id": self.decision_id,
@@ -235,6 +260,16 @@ class PaperBroker:
         instrument_token: int = 0,
         data_timestamp: str = "",
         entry_reason: str = "",
+        # Execution model fields
+        execution_type: str = "synthetic_spot",
+        option_type: str | None = None,
+        option_strike: float | None = None,
+        option_expiry: str | None = None,
+        option_premium: float | None = None,
+        option_lot_size: int | None = None,
+        option_lots: int | None = None,
+        underlying_symbol: str | None = None,
+        underlying_entry_price: float | None = None,
     ) -> dict[str, Any]:
         """Execute a paper order."""
         if not self._running or self._paused:
@@ -297,6 +332,15 @@ class PaperBroker:
             instrument_token=instrument_token,
             data_timestamp=data_timestamp,
             entry_reason=entry_reason or side,
+            execution_type=execution_type,
+            option_type=option_type,
+            option_strike=option_strike,
+            option_expiry=option_expiry,
+            option_premium=option_premium,
+            option_lot_size=option_lot_size,
+            option_lots=option_lots,
+            underlying_symbol=underlying_symbol,
+            underlying_entry_price=underlying_entry_price,
         )
         self._positions[trade_id] = position
         self._account.open_positions += 1

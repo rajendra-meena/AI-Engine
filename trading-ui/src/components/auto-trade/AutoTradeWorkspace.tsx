@@ -1096,6 +1096,20 @@ export function AutoTradeWorkspace() {
                       <span>Decision: <strong>{analysis.display_decision}</strong></span>
                       <span>Score: <strong>{analysis.opportunity_score}/100</strong></span>
                     </div>
+                    {analysis.execution_type === "option_buying" && analysis.option_type && (
+                      <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5 text-[9px] text-emerald-500/80">
+                        <span>Option: <strong>{analysis.option_strike?.toFixed(0)}{analysis.option_type}</strong></span>
+                        {analysis.option_premium !== undefined && (
+                          <span>Premium: <strong>₹{analysis.option_premium}</strong></span>
+                        )}
+                        {analysis.option_lots !== undefined && (
+                          <span>Lots: <strong>{analysis.option_lots}</strong></span>
+                        )}
+                        {analysis.option_expiry && (
+                          <span>Expiry: <strong>{analysis.option_expiry}</strong></span>
+                        )}
+                      </div>
+                    )}
                     {analysis.reason && (
                       <div className="mt-1 text-[8px] text-muted-foreground/70">{analysis.reason}</div>
                     )}
