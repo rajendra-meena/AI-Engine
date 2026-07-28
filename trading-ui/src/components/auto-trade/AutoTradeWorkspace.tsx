@@ -11,7 +11,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { autoTradeService } from "@/services/autoTradeService"
-import type { WorkspaceResponse, OpportunityCandidate, TradePlan } from "@/services/autoTradeService"
+import type { WorkspaceResponse, OpportunityCandidate, TradePlan, AutoTradeSettings } from "@/services/autoTradeService"
 import { orchestratorService } from "@/services/orchestratorService"
 import { executionService } from "@/services/executionService"
 import { useRealtimeStore } from "@/store/useRealtimeStore"
@@ -176,8 +176,10 @@ const CATEGORY_COLORS: Record<string, string> = {
 /* ─── MAIN COMPONENT ─── */
 
 export function AutoTradeWorkspace() {
-  /* ════════════════ State ════════════════ */
+  /* ════════════════ Backend-authoritative State ════════════════ */
   const [workspace, setWorkspace] = useState<WorkspaceResponse | null>(null)
+  const [ats, setAts] = useState<AutoTradeSettings | null>(null)
+  const [rtMode, setRtMode] = useState<{mode:string;paper:boolean;can_execute_paper:boolean} | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [tradingMode, setTradingMode] = useState("paper")
@@ -189,37 +191,20 @@ export function AutoTradeWorkspace() {
   const [showSettings, setShowSettings] = useState(false)
   const [isToggling, setIsToggling] = useState(false)
 
-  // User settings
-  const [marketUniverse, setMarketUniverse] = useState("all")
-  const [maxTradesPerDay, setMaxTradesPerDay] = useState(2)
-  const [minConfidence, setMinConfidence] = useState(80)
-  const [minGrade, setMinGrade] = useState("B")
-  const [minRR, setMinRR] = useState("1:2")
-  const [allowBuy, setAllowBuy] = useState(true)
-  const [allowSell, setAllowSell] = useState(true)
-  const [autoExecutePaper, setAutoExecutePaper] = useState(false)
-
-  // Sync autoExecutePaper from backend workspace response (persisted setting)
-  useEffect(() => {
-    if (workspace?.engine?.auto_execute_paper !== undefined) {
-      setAutoExecutePaper(workspace.engine.auto_execute_paper)
-    }
-  }, [workspace?.engine?.auto_execute_paper])
-
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   /* ════════════════ Data Fetching ════════════════ */
 
-  const fetchWorkspace = useCallback(async () => {
+  const fetchAll = useCallback(async () => {
     try {
-      const data = await autoTradeService.getWorkspace()
-      if (!isToggling) {
-        setWorkspace(data)
-        // Sync trading mode from authoritative backend
-        if (data.engine?.mode) {
-          setTradingMode(data.engine.mode)
-        }
-      }
+      const [ws, sv, rt] = await Promise.all([
+        autoTradeService.getWorkspace(),
+        autoTradeService.getSettings().catch(() => null),
+        autoTradeService.getRuntimeMode().catch(() => null),
+      ])
+      if (!isToggling) setWorkspace(ws)
+      if (sv) setAts(sv)
+      if (rt) { setRtMode(rt); setTradingMode(rt.mode); }
       setError(null)
     } catch (e) {
       setError("Could not connect to backend")
@@ -227,8 +212,18 @@ export function AutoTradeWorkspace() {
     setLoading(false)
   }, [isToggling])
 
+  const fetchWorkspace = useCallback(async () => {
+    try {
+      const data = await autoTradeService.getWorkspace()
+      if (!isToggling) setWorkspace(data)
+      setError(null)
+    } catch (e) {
+      setError("Could not connect to backend")
+    }
+  }, [isToggling])
+
   useEffect(() => {
-    const t = setTimeout(() => fetchWorkspace(), 0)
+    const t = setTimeout(() => fetchAll(), 0)
     pollingRef.current = setInterval(fetchWorkspace, 5000)
     return () => {
       clearTimeout(t)
@@ -522,71 +517,89 @@ export function AutoTradeWorkspace() {
               )}
             </SectionCard>
 
-            {/* USER SETTINGS */}
+            {/* USER SETTINGS — all controls call PATCH /api/auto-trade/settings */}
             <SectionCard title="User Settings" icon={<Gauge className="w-3.5 h-3.5 text-primary" />} defaultOpen={false}>
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] text-muted-foreground">Market Universe</label>
-                  <select value={marketUniverse} onChange={e => setMarketUniverse(e.target.value)}
-                    className="h-6 rounded border bg-muted/30 px-1.5 text-[10px] font-medium">
-                    <option value="nifty50">NIFTY 50</option>
-                    <option value="banknifty">BANKNIFTY</option>
-                    <option value="major_indices">Major Indices</option>
-                    <option value="fno">F&O Stocks</option>
-                    <option value="watchlist">Watchlist</option>
-                    <option value="all">All Supported Symbols</option>
-                  </select>
-                </div>
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] text-muted-foreground">Max Trades/Day</label>
-                  <input type="number" value={maxTradesPerDay} onChange={e => setMaxTradesPerDay(Number(e.target.value))}
-                    min={1} max={10} className="w-16 h-6 rounded border bg-muted/30 px-1.5 text-[10px] font-medium text-right" />
-                </div>
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] text-muted-foreground">Min AI Confidence <HelpTip content="Minimum AI confidence score required for trade approval" /></label>
-                  <input type="number" value={minConfidence} onChange={e => setMinConfidence(Number(e.target.value))}
-                    min={0} max={100} className="w-16 h-6 rounded border bg-muted/30 px-1.5 text-[10px] font-medium text-right" />
-                </div>
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] text-muted-foreground">Min Trade Grade</label>
-                  <select value={minGrade} onChange={e => setMinGrade(e.target.value)}
-                    className="h-6 rounded border bg-muted/30 px-1.5 text-[10px] font-medium">
-                    <option value="A">A</option>
-                    <option value="B">B</option>
-                    <option value="C">C</option>
-                  </select>
-                </div>
-                <div className="flex items-center justify-between">
-                  <label className="text-[10px] text-muted-foreground">Min Risk/Reward <HelpTip content="Minimum acceptable ratio of potential reward to risk" /></label>
-                  <input type="text" value={minRR} onChange={e => setMinRR(e.target.value)}
-                    className="w-16 h-6 rounded border bg-muted/30 px-1.5 text-[10px] font-medium text-right" />
-                </div>
-                <div className="flex items-center justify-between">
+                {[
+                  { label: "Execution Type", key: "execution_type", kind: "select", opts: ["option_buying","synthetic_spot"] },
+                  { label: "Lot Mode", key: "lot_mode", kind: "select", opts: ["manual","auto_risk_based"] },
+                  { label: "Lots (1-20)", key: "manual_lots", kind: "number", min: 1, max: 20 },
+                  { label: "Max Auto Lots", key: "max_auto_lots", kind: "number", min: 1, max: 100 },
+                  { label: "Max Trades/Day", key: "max_trades_per_day", kind: "number", min: 1, max: 50 },
+                  { label: "Min AI Confidence", key: "min_ai_confidence", kind: "number", min: 0, max: 100 },
+                  { label: "Min Trade Grade", key: "min_trade_grade", kind: "select", opts: ["A","B","C"] },
+                  { label: "Min Risk/Reward", key: "min_risk_reward", kind: "number", min: 0.5, max: 10, step: 0.1 },
+                  { label: "Strike Mode", key: "strike_mode", kind: "select", opts: ["ATM"] },
+                  { label: "Expiry Mode", key: "expiry_mode", kind: "select", opts: ["NEAREST_WEEKLY"] },
+                  { label: "Premium Source", key: "premium_source", kind: "select", opts: ["ZERODHA","SIMULATED"] },
+                ].map(({ label, key, kind, opts, min, max, step }) => {
+                  const val = ats ? (ats as any)[key] : undefined;
+                  const patch = async (newVal: any) => {
+                    if (!ats) return;
+                    setAts({...ats, [key]: newVal});
+                    try {
+                      const res = await autoTradeService.updateSettings({ [key]: newVal });
+                      if (res) setAts(res);
+                    } catch {
+                      setAts(ats);
+                      setError(`Failed to update ${label}`);
+                    }
+                  };
+                  if (kind === "select" && opts)
+                    return (
+                      <div key={key} className="flex items-center justify-between">
+                        <label className="text-[10px] text-muted-foreground">{label}</label>
+                        <select value={val ?? opts[0]} onChange={e => patch(e.target.value)}
+                          className="h-6 rounded border bg-muted/30 px-1.5 text-[10px] font-medium">
+                          {opts.map(o => <option key={o} value={o}>{o}</option>)}
+                        </select>
+                      </div>
+                    );
+                  return (
+                    <div key={key} className="flex items-center justify-between">
+                      <label className="text-[10px] text-muted-foreground">{label}</label>
+                      <input type="number" value={val ?? ''} onChange={e => patch(Number(e.target.value))}
+                        min={min} max={max} step={step}
+                        className="w-16 h-6 rounded border bg-muted/30 px-1.5 text-[10px] font-medium text-right" />
+                    </div>
+                  );
+                })}
+                <div className="flex items-center justify-between pt-1 border-t">
                   <label className="text-[10px] text-muted-foreground">Allow Buy Trades</label>
-                  <button onClick={() => setAllowBuy(!allowBuy)} className={cn("w-8 h-4 rounded-full transition-colors", allowBuy ? "bg-emerald-500" : "bg-muted")}>
-                    <div className={cn("w-3 h-3 rounded-full bg-white transition-transform", allowBuy ? "translate-x-4" : "translate-x-0.5")} />
+                  <button onClick={async () => {
+                    const newVal = !(ats?.allow_buy_trades ?? true);
+                    const prev = ats;
+                    if (ats) setAts({...ats, allow_buy_trades: newVal});
+                    try { const r = await autoTradeService.updateSettings({ allow_buy_trades: newVal }); if (r) setAts(r); }
+                    catch { if (prev) setAts(prev); setError("Failed to update Allow Buy"); }
+                  }} className={cn("w-8 h-4 rounded-full transition-colors", ats?.allow_buy_trades ? "bg-emerald-500" : "bg-muted")}>
+                    <div className={cn("w-3 h-3 rounded-full bg-white transition-transform", ats?.allow_buy_trades ? "translate-x-4" : "translate-x-0.5")} />
                   </button>
                 </div>
                 <div className="flex items-center justify-between">
                   <label className="text-[10px] text-muted-foreground">Allow Sell Trades</label>
-                  <button onClick={() => setAllowSell(!allowSell)} className={cn("w-8 h-4 rounded-full transition-colors", allowSell ? "bg-red-500" : "bg-muted")}>
-                    <div className={cn("w-3 h-3 rounded-full bg-white transition-transform", allowSell ? "translate-x-4" : "translate-x-0.5")} />
+                  <button onClick={async () => {
+                    const newVal = !(ats?.allow_sell_trades ?? true);
+                    const prev = ats;
+                    if (ats) setAts({...ats, allow_sell_trades: newVal});
+                    try { const r = await autoTradeService.updateSettings({ allow_sell_trades: newVal }); if (r) setAts(r); }
+                    catch { if (prev) setAts(prev); setError("Failed to update Allow Sell"); }
+                  }} className={cn("w-8 h-4 rounded-full transition-colors", ats?.allow_sell_trades ? "bg-red-500" : "bg-muted")}>
+                    <div className={cn("w-3 h-3 rounded-full bg-white transition-transform", ats?.allow_sell_trades ? "translate-x-4" : "translate-x-0.5")} />
                   </button>
                 </div>
-                {tradingMode === "paper" && (
-                  <div className="flex items-center justify-between pt-1 border-t">
-                    <label className="text-[10px] text-muted-foreground">Auto Execute Paper Trades</label>
-                    <button onClick={async () => {
-                      const newVal = !autoExecutePaper;
-                      setAutoExecutePaper(newVal);
-                      try {
-                        await autoTradeService.updateSettings({ auto_execute_paper: newVal });
-                      } catch { /* ignore */ }
-                    }} className={cn("w-8 h-4 rounded-full transition-colors", autoExecutePaper ? "bg-emerald-500" : "bg-muted")}>
-                      <div className={cn("w-3 h-3 rounded-full bg-white transition-transform", autoExecutePaper ? "translate-x-4" : "translate-x-0.5")} />
-                    </button>
-                  </div>
-                )}
+                <div className="flex items-center justify-between pt-1 border-t">
+                  <label className="text-[10px] text-muted-foreground">Auto Execute Paper Trades</label>
+                  <button onClick={async () => {
+                    const newVal = !(ats?.auto_execute_paper_trades ?? true);
+                    const prev = ats;
+                    if (ats) setAts({...ats, auto_execute_paper_trades: newVal});
+                    try { const r = await autoTradeService.updateSettings({ auto_execute_paper_trades: newVal }); if (r) setAts(r); }
+                    catch { if (prev) setAts(prev); setError("Failed to update Auto Execute"); }
+                  }} className={cn("w-8 h-4 rounded-full transition-colors", ats?.auto_execute_paper_trades ? "bg-emerald-500" : "bg-muted")}>
+                    <div className={cn("w-3 h-3 rounded-full bg-white transition-transform", ats?.auto_execute_paper_trades ? "translate-x-4" : "translate-x-0.5")} />
+                  </button>
+                </div>
               </div>
             </SectionCard>
 

@@ -141,11 +141,44 @@ export interface EngineControlResponse {
   blocked_systems?: string[]
 }
 
-export interface RuntimeModeResponse {
-  success: boolean
-  previous_mode: string
-  mode: string
-  message?: string
+export interface AutoTradeSettings {
+  market_universe: string
+  max_trades_per_day: number
+  min_ai_confidence: number
+  min_trade_grade: string
+  min_risk_reward: number
+  allow_buy_trades: boolean
+  allow_sell_trades: boolean
+  auto_execute_paper_trades: boolean
+  execution_type: string
+  lot_mode: string
+  manual_lots: number
+  max_auto_lots: number
+  strike_mode: string
+  expiry_mode: string
+  premium_source: string
+  settings_version: number
+  updated_at: string
+  success?: boolean
+  errors?: string[]
+}
+
+export interface OptionExecutionPlan {
+  underlying_symbol: string
+  direction: string
+  option_type: string
+  expiry: string
+  strike: number
+  lot_size: number
+  lots: number
+  premium: number
+  premium_source: string
+  total_cost: number
+  capital_required: number
+  premium_entry: number
+  premium_sl: number
+  premium_target: number
+  risk_per_lot: number
 }
 
 class AutoTradeService {
@@ -203,9 +236,15 @@ class AutoTradeService {
     return res.json()
   }
 
-  async updateSettings(settings: Record<string, any>): Promise<any> {
+  async getSettings(): Promise<AutoTradeSettings> {
+    const res = await fetch(`${this.base}/api/auto-trade/settings`)
+    if (!res.ok) throw new Error("Failed to fetch settings")
+    return res.json()
+  }
+
+  async updateSettings(settings: Record<string, any>): Promise<AutoTradeSettings> {
     const res = await fetch(`${this.base}/api/auto-trade/settings`, {
-      method: "POST",
+      method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(settings),
     })

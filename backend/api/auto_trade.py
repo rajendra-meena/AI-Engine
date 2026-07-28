@@ -51,6 +51,7 @@ from core.freshness import (
     FRESHNESS_DISCONNECTED,
 )
 from core.enums import TradeDirection, normalize_direction, display_direction
+from api.auto_trade_settings import get_settings as get_ats
 from candles.events import CANDLE_CLOSED as CANDLE_CLOSED_EV
 from core.zerodha_events import (
     LIVE_TICK_RECEIVED,

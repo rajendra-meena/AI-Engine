@@ -64,6 +64,7 @@ from api.market_regime import router as regime_router, set_regime_engine
 from market_regime.engine import RegimeEngine
 from api.model_registry import router as model_registry_router
 from api.certification import router as certification_router
+from api.auto_trade_settings import router as auto_trade_settings_router
 from api.auto_trade import (
     router as auto_trade_router,
     set_auto_trade_ai_engine,
@@ -763,6 +764,7 @@ app.include_router(regime_router)
 app.include_router(model_registry_router)
 app.include_router(certification_router)
 app.include_router(auto_trade_router)
+app.include_router(auto_trade_settings_router)
 
 
 # ── WebSocket endpoint ──
