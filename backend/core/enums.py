@@ -101,3 +101,83 @@ class Decision(str, Enum):
     SELL = "SELL"
     WAIT = "WAIT"
     NO_TRADE = "NO_TRADE"
+
+
+class TradeDirection(str, Enum):
+    """
+    Canonical internal trade direction.
+
+    All backend code must use these values internally.
+    Use normalize_direction() at external boundaries.
+    """
+    LONG = "LONG"
+    SHORT = "SHORT"
+    NONE = "NONE"
+
+    @classmethod
+    def values(cls) -> list[str]:
+        return [m.value for m in cls]
+
+
+def normalize_direction(value: str | None) -> TradeDirection:
+    """
+    Normalize legacy direction strings to canonical TradeDirection.
+
+    External boundaries (API, broker adapters, display) convert to/from these.
+
+    BUY       → LONG
+    BULLISH   → LONG
+    LONG      → LONG
+
+    SELL      → SHORT
+    BEARISH   → SHORT
+    SHORT     → SHORT
+
+    WAIT      → NONE
+    NO_TRADE  → NONE
+    NONE      → NONE
+
+    Raises ValueError on unknown values — no silent fallback to NONE.
+    """
+    if value is None:
+        return TradeDirection.NONE
+
+    upper = value.strip().upper()
+
+    mapping: dict[str, TradeDirection] = {
+        "BUY": TradeDirection.LONG,
+        "BULLISH": TradeDirection.LONG,
+        "LONG": TradeDirection.LONG,
+        "SELL": TradeDirection.SHORT,
+        "BEARISH": TradeDirection.SHORT,
+        "SHORT": TradeDirection.SHORT,
+        "WAIT": TradeDirection.NONE,
+        "NO_TRADE": TradeDirection.NONE,
+        "NONE": TradeDirection.NONE,
+        "": TradeDirection.NONE,
+    }
+
+    if upper in mapping:
+        return mapping[upper]
+
+    raise ValueError(
+        f"Unknown direction value: '{value}'. "
+        f"Valid values: {sorted(set(mapping.keys()) - {'',})}"
+    )
+
+
+def display_direction(direction: TradeDirection | str) -> str:
+    """
+    Convert canonical TradeDirection to UI display string.
+
+    LONG  → "BUY"
+    SHORT → "SELL"
+    NONE  → "NO TRADE"
+    """
+    d = normalize_direction(direction) if isinstance(direction, str) else direction
+    display_map = {
+        TradeDirection.LONG: "BUY",
+        TradeDirection.SHORT: "SELL",
+        TradeDirection.NONE: "NO TRADE",
+    }
+    return display_map[d]

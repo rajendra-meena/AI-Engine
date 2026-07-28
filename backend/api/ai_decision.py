@@ -52,6 +52,18 @@ async def ai_status():
     return _get().get_stats()
 
 
+@router.get("/api/ai/barrier-diagnostics")
+async def ai_barrier_diagnostics():
+    """Version-barrier diagnostics for the AI decision engine."""
+    engine = _get()
+    stats = engine.get_stats()
+    return {
+        "units": stats.get("units", 0),
+        "barrier_diagnostics": stats.get("barrier_diagnostics", {}),
+        "total_decisions": stats.get("total_decisions", 0),
+    }
+
+
 @router.get("/api/ai/latest")
 async def ai_latest(symbol: str = Query("NIFTY 50")):
     symbol = get_canonical_symbol(symbol)

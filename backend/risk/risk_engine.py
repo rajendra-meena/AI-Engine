@@ -288,7 +288,7 @@ class RiskEngine:
             and r.status in (ValidationStatus.FAIL, ValidationStatus.BLOCK)
         ]
 
-        execution_permitted = len(blocks) == 0
+        execution_permitted = len(blocks) == 0 and len(fails) == 0
         passed = len(blocks) == 0 and len(fails) == 0
 
         # Risk score: count critical/high failures

@@ -50,6 +50,7 @@ from core.freshness import (
     FRESHNESS_STALE,
     FRESHNESS_DISCONNECTED,
 )
+from core.enums import TradeDirection, normalize_direction, display_direction
 from candles.events import CANDLE_CLOSED as CANDLE_CLOSED_EV
 from core.zerodha_events import (
     LIVE_TICK_RECEIVED,
@@ -163,22 +164,47 @@ ENGINE_STATE_STOPPING = "STOPPING"
 _SYMBOL_ANALYSIS_COOLDOWN_S: float = 10.0
 _last_analysis_times: dict[str, float] = {}
 
-# Scan metrics (cumulative, separate from candidates/trades)
+# ── Event-driven scan metrics ──
+# These are the ONLY authoritative counters. All UI reads from these.
+# No polling scan loop exists — analysis is triggered by CANDLE_CLOSED events.
 _scan_metrics = {
-    "total_scan_cycles": 0,
-    "symbols_scanned_current": 0,
-    "symbols_scanned_total": 0,
-    "analyses_completed_total": 0,
-    "no_trade_decisions_total": 0,
-    "candidates_found_total": 0,
-    "risk_blocked_total": 0,
-    "paper_trades_created_total": 0,
-    "last_scan_started_at": None,   # ISO timestamp
-    "last_scan_completed_at": None, # ISO timestamp
-    "last_analysis_at": None,       # ISO timestamp
+    "total_analysis_cycles": 0,         # incremented each time _handle_candle_closed runs
+    "analyses_completed_total": 0,      # incremented when _run_fresh_analysis returns a result
+    "symbols_scanned_total": 0,         # incremented per symbol per completed analysis
+    "symbols_scanned_current_cycle": 0, # current event's symbol count (reset per event)
+    "no_trade_decisions_total": 0,      # direction=NONE
+    # Granular candidate funnel
+    "raw_directional_signals_total": 0,   # any LONG/SHORT from AI decision
+    "score_qualified_candidates_total": 0,# LONG/SHORT with score>=50, no reject_reasons
+    "trade_plans_created_total": 0,       # TradePlanner created a valid plan
+    "risk_approved_total": 0,            # RiskEngine validated the plan
+    "risk_blocked_total": 0,            # LONG/SHORT rejected by risk
+    "execution_attempts_total": 0,       # ExecutionGateway.execute() called
+    "execution_failed_total": 0,         # Gateway execution returned failure
+    "paper_trades_created_total": 0,    # PaperBroker created a position
+    # Timestamps
+    "last_candle_closed_at": None,      # ISO timestamp
+    "last_analysis_started_at": None,   # ISO timestamp
+    "last_analysis_completed_at": None, # ISO timestamp
+    "last_successful_analysis_at": None,# ISO timestamp
+    # Execution pipeline diagnostic state (last attempt)
+    "last_candidate": {},
+    "last_trade_plan": {},
+    "last_risk_result": {},
+    "last_execution_result": {},
+    "last_block_reason": None,
+    "last_block_stage": None,
+    "last_block_code": None,
+    "last_execution_trace": [],
+    "last_trade_plan_input": {},
 }
 
+# Per-symbol analysis state (never overwritten by cooldown skips)
+# Keys: symbol string → dict with canonical analysis fields
+_analysis_state_by_symbol: dict[str, dict] = {}
+
 # Analysis status reason (visible in Current Market Analysis)
+# This reflects the LATEST pipeline event, not the latest analysis.
 _analysis_blocked_reason: str | None = None
 _analysis_blocked_category: str = ""  # "WAITING", "WARMING", "BLOCKED", "ANALYSED"
 
@@ -521,13 +547,34 @@ async def _run_fresh_analysis(symbol: str, analysis_cycle_id: str = "") -> dict[
     # 4. Build opportunity score from fresh data
     result = _build_opportunity_score(symbol, ai_snap, regime_snap)
 
+    # Track pipeline counters — raw_directional_signals_total only here
+    raw_dir = result.get("direction", "NONE")
+    if raw_dir in ("LONG", "SHORT"):
+        _scan_metrics["raw_directional_signals_total"] = _scan_metrics.get("raw_directional_signals_total", 0) + 1
+
     # 5. If opportunity qualifies, bridge to execution
-    if result and result.get("opportunity_score", 0) >= 50 and result.get("direction") in ("BUY", "SELL"):
+    # NOTE: score_qualified_candidates_total is incremented in _handle_candle_closed (one place only)
+    if result and result.get("opportunity_score", 0) >= 50 and result.get("direction") in ("LONG", "BUY", "SHORT", "SELL"):
         if not result.get("reject_reasons"):
+            _scan_metrics["execution_attempts_total"] = _scan_metrics.get("execution_attempts_total", 0) + 1
+            _scan_metrics["last_candidate"] = {
+                "symbol": symbol,
+                "direction": raw_dir,
+                "score": result.get("opportunity_score", 0),
+                "analysis_cycle_id": analysis_cycle_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
             exec_result = await _try_execute_trade(symbol, result, ai_snap, regime_snap,
                                                    analysis_cycle_id=analysis_cycle_id)
             if exec_result:
                 result["execution"] = exec_result
+                _scan_metrics["last_execution_result"] = exec_result
+                _scan_metrics["last_block_reason"] = None
+            else:
+                _scan_metrics["execution_failed_total"] = _scan_metrics.get("execution_failed_total", 0) + 1
+                # _try_execute_trade already set last_block_reason — don't overwrite
+                if not _scan_metrics.get("last_block_reason"):
+                    _scan_metrics["last_block_reason"] = "Execution returned None — check logs"
 
     _mark_analyzed(symbol)
     return result
@@ -577,8 +624,16 @@ async def _handle_candle_closed(event: BusEvent):
 
     Signal suppression: candles with allow_signal_generation=false
     (e.g. warmup historical candles) do not trigger analysis.
+
+    This function owns the event-driven metrics:
+    - total_analysis_cycles
+    - symbols_scanned_total, analyses_completed_total
+    - no_trade_decisions_total, candidates_found_total
+    - risk_blocked_total, paper_trades_created_total
+    - per-symbol analysis state
     """
     global _engine_state, _analysis_blocked_reason, _analysis_blocked_category, _scan_metrics
+    global _analysis_state_by_symbol
     if not _engine_running or _engine_paused or not _analysis_enabled:
         return
 
@@ -611,7 +666,6 @@ async def _handle_candle_closed(event: BusEvent):
             return
 
         # ── Idempotency gate ──
-        # Skip if we've already seen this candle version
         candle_version = payload.get("candle_version", "")
         idempotency_key = payload.get("idempotency_key", "")
         if idempotency_key:
@@ -623,6 +677,11 @@ async def _handle_candle_closed(event: BusEvent):
         # Extract analysis_cycle_id from candle event for idempotent execution
         analysis_cycle_id = payload.get("analysis_cycle_id", "")
 
+        # Increment cycle counter
+        _scan_metrics["total_analysis_cycles"] += 1
+        _scan_metrics["last_candle_closed_at"] = datetime.now(timezone.utc).isoformat()
+        _scan_metrics["symbols_scanned_current_cycle"] = 1  # one symbol per candle event
+
         # Update status: about to analyse
         _update_analysis_status_from_symbol(symbol, "ANALYSIS_IN_PROGRESS", "ANALYSING")
 
@@ -630,47 +689,111 @@ async def _handle_candle_closed(event: BusEvent):
         result = await _run_fresh_analysis(symbol, analysis_cycle_id=analysis_cycle_id)
         if result:
             _engine_state = ENGINE_STATE_SCANNING
-            _scan_metrics["last_analysis_at"] = datetime.now(timezone.utc).isoformat()
+            _scan_metrics["last_analysis_completed_at"] = datetime.now(timezone.utc).isoformat()
+            _scan_metrics["last_successful_analysis_at"] = datetime.now(timezone.utc).isoformat()
             _scan_metrics["analyses_completed_total"] += 1
+            _scan_metrics["symbols_scanned_total"] += 1
 
-            direction = result.get("direction", "NONE")
-            if direction in ("WAIT", "NO_TRADE"):
+            # Normalize the result direction
+            raw_direction = result.get("direction", "NONE")
+            try:
+                canonical_dir = normalize_direction(raw_direction)
+            except ValueError:
+                canonical_dir = TradeDirection.NONE
+            result["direction"] = canonical_dir.value
+
+            # Store per-symbol analysis state (never overwritten by cooldown)
+            _analysis_state_by_symbol[symbol] = {
+                "symbol": symbol,
+                "direction": canonical_dir.value,
+                "display_decision": display_direction(canonical_dir),
+                "bias": result.get("bias", result.get("regime", "NEUTRAL")),
+                "opportunity_score": result.get("opportunity_score", 0),
+                "confidence": result.get("confidence", 0),
+                "status": "ANALYSED",
+                "reason": "NO_VALID_SIGNAL",
+                "reject_reasons": result.get("reject_reasons", []),
+                "risk_status": result.get("risk_status", "NO_DATA"),
+                "candle_version": candle_version,
+                "analysed_at": datetime.now(timezone.utc).isoformat(),
+            }
+
+            if canonical_dir == TradeDirection.NONE:
                 _scan_metrics["no_trade_decisions_total"] += 1
+                _analysis_state_by_symbol[symbol]["reason"] = "TRADE_PLAN_DIRECTION_NONE"
+                _analysis_state_by_symbol[symbol]["display_decision"] = "NO TRADE"
                 _update_analysis_status_from_symbol(
                     symbol,
-                    f"NO_TRADE: {result.get('reject_reasons', ['No reason'])[0] if result.get('reject_reasons') else 'Strategy conditions not met'}",
+                    f"NO_VALID_SIGNAL: direction=NONE bias={result.get('regime', 'NEUTRAL')}",
                     "ANALYSED"
                 )
-            elif direction in ("BUY", "SELL"):
+            elif canonical_dir in (TradeDirection.LONG, TradeDirection.SHORT):
                 score = result.get("opportunity_score", 0)
                 if result.get("reject_reasons"):
                     _scan_metrics["risk_blocked_total"] += 1
+                    risk_reason = result["reject_reasons"][0]
+                    _analysis_state_by_symbol[symbol]["reason"] = f"RISK_BLOCKED: {risk_reason}"
+                    _analysis_state_by_symbol[symbol]["display_decision"] = display_direction(canonical_dir)
                     _update_analysis_status_from_symbol(
                         symbol,
-                        f"RISK_BLOCKED: {result['reject_reasons'][0]}",
+                        f"RISK_BLOCKED: {risk_reason}",
+                        "ANALYSED"
+                    )
+                elif score >= 50:
+                    _scan_metrics["score_qualified_candidates_total"] += 1
+                    # Check execution result from _run_fresh_analysis
+                    exec_info = result.get("execution")
+                    if exec_info:
+                        _analysis_state_by_symbol[symbol]["reason"] = (
+                            f"EXECUTION_{exec_info.get('status', 'RESULT').upper()}: "
+                            f"{exec_info.get('reason', '')}"
+                        )
+                    else:
+                        _analysis_state_by_symbol[symbol]["reason"] = (
+                            f"CANDIDATE_FOUND → NO_EXECUTION: {canonical_dir.value} score={score}"
+                        )
+                    _analysis_state_by_symbol[symbol]["display_decision"] = display_direction(canonical_dir)
+                    _update_analysis_status_from_symbol(
+                        symbol,
+                        _analysis_state_by_symbol[symbol]["reason"],
                         "ANALYSED"
                     )
                 else:
-                    _scan_metrics["candidates_found_total"] += 1
+                    _analysis_state_by_symbol[symbol]["reason"] = f"SCORE_BELOW_THRESHOLD: {score}/50"
+                    _analysis_state_by_symbol[symbol]["display_decision"] = display_direction(canonical_dir)
                     _update_analysis_status_from_symbol(
                         symbol,
-                        f"CANDIDATE_FOUND: {direction} score={score}",
+                        f"SCORE_BELOW_THRESHOLD: {score}",
                         "ANALYSED"
                     )
 
-            if result.get("execution"):
-                _scan_metrics["paper_trades_created_total"] += 1
-                log_info("AutoTrade: trade executed from candle close",
-                         symbol=symbol,
-                         direction=result.get("direction"),
-                         score=result.get("opportunity_score"),
-                         exec_status=result["execution"].get("status", "unknown"))
+                if result.get("execution"):
+                    _scan_metrics["paper_trades_created_total"] += 1
+                    log_info("AutoTrade: trade executed from candle close",
+                             symbol=symbol,
+                             direction=canonical_dir.value,
+                             score=result.get("opportunity_score"),
+                             exec_status=result["execution"].get("status", "unknown"))
+            else:
+                # Unknown direction — record error but don't crash
+                _analysis_state_by_symbol[symbol]["reason"] = f"INVALID_DIRECTION: {raw_direction}"
+                _update_analysis_status_from_symbol(
+                    symbol, f"INVALID_DIRECTION: {raw_direction}", "BLOCKED"
+                )
         else:
+            # _run_fresh_analysis returned None — could be cooldown or no AI data
+            # Do NOT overwrite _analysis_state_by_symbol — preserve last valid analysis
             _update_analysis_status_from_symbol(
                 symbol, "ANALYSIS_SKIPPED: symbol cooled down or no AI data", "WAITING"
             )
 
     except Exception as e:
+        _analysis_state_by_symbol[symbol] = {
+            "symbol": symbol,
+            "status": "ERROR",
+            "reason": f"ANALYSIS_ERROR: {e}",
+            "analysed_at": datetime.now(timezone.utc).isoformat(),
+        }
         _update_analysis_status_from_symbol(symbol, f"ANALYSIS_ERROR: {e}", "BLOCKED")
         log_error("AutoTrade: candle closed handler error", error=str(e))
 
@@ -823,14 +946,17 @@ def _build_opportunity_score(symbol: str, ai_snap: dict | None, regime_snap: dic
     else:
         score += 25 * 0.15  # neutral
 
-    # Decision direction (weight 10%)
-    direction = ai_snap.get("trade_plan", {}).get("direction", "NONE")
-    if direction in ("BUY", "SELL"):
+    # Decision direction (weight 10%) — canonical LONG/SHORT/NONE
+    raw_direction = ai_snap.get("trade_plan", {}).get("direction", "NONE")
+    try:
+        direction = normalize_direction(raw_direction)
+    except ValueError:
+        direction = TradeDirection.NONE
+        reject_reasons.append(f"Invalid trade plan direction: {raw_direction}")
+
+    if direction in (TradeDirection.LONG, TradeDirection.SHORT):
         score += 60 * 0.10
-        reasons.append(f"Clear {direction} signal detected")
-    elif direction == "WAIT":
-        score += 20 * 0.10
-        reject_reasons.append("Signal direction is WAIT")
+        reasons.append(f"Clear {display_direction(direction)} signal detected")
     else:
         reject_reasons.append("No clear trade direction")
 
@@ -882,9 +1008,8 @@ def _build_opportunity_score(symbol: str, ai_snap: dict | None, regime_snap: dic
         "grade": grade_label,
         "regime": regime_snap.get("regime", "unknown") if regime_snap else "unknown",
         "strategy": ai_snap.get("trade_plan", {}).get("strategy", "unknown"),
-        "direction": direction,
+        "direction": direction.value if hasattr(direction, 'value') else str(direction),
         "risk_status": risk_level,
-        "source_provider": "ZERODHA_KITE",
         "freshness_status": freshness_status,
         "reasons": reasons,
         "reject_reasons": reject_reasons,
@@ -921,75 +1046,102 @@ async def _try_execute_trade(
     submits through the ExecutionGateway which delegates to PaperBroker.
 
     Returns the execution result dict, or None if execution was skipped/blocked.
-
-    Execution-level idempotency: uses analysis_cycle_id + symbol as the
-    canonical key so the same candle cycle never produces duplicate trades.
     """
+    # ── Execution trace ──
+    _trace: list[dict] = []
+    def _stage(name: str, ok: bool = True, **kw):
+        _trace.append({"stage": name, "ok": ok, "ts": datetime.now(timezone.utc).isoformat(), **kw})
+
+    def _fail(code: str, reason: str, **kw):
+        _scan_metrics["last_block_stage"] = code
+        _scan_metrics["last_block_code"] = code
+        _scan_metrics["last_block_reason"] = reason
+        _stage(code, False, reason=reason, **kw)
+        _scan_metrics["last_execution_trace"] = _trace
+        return None
+
+    _stage("TRY_EXECUTE_ENTERED", symbol=symbol, direction=result.get("direction",""), score=result.get("opportunity_score",0))
+
     if not result or result.get("opportunity_score", 0) < 50:
-        return None
-    if result.get("direction") not in ("BUY", "SELL"):
-        return None
+        return _fail("EXEC_BLOCK_SCORE_BELOW_50", f"Score {result.get('opportunity_score',0)} < 50")
+
+    raw_dir = result.get("direction", "NONE")
+    try:
+        canonical_dir = normalize_direction(raw_dir)
+    except ValueError:
+        return _fail("EXEC_BLOCK_INVALID_DIRECTION", f"Invalid direction: {raw_dir}")
+
+    if canonical_dir not in (TradeDirection.LONG, TradeDirection.SHORT):
+        return _fail("EXEC_BLOCK_DIRECTION_NOT_TRADEABLE", f"Direction not tradeable: {raw_dir}")
+
     if result.get("reject_reasons"):
-        return None
+        return _fail("EXEC_BLOCK_REJECT_REASONS", f"Rejected: {result['reject_reasons'][0]}")
 
-    # Runtime mode check — only OBSERVE/SHADOW/PAPER allowed
     runtime_mode = _get_runtime_mode()
-    if runtime_mode not in ("observe", "shadow", "paper"):
-        log_info("AutoTrade: execution blocked by runtime mode", mode=runtime_mode, symbol=symbol)
-        return None
+    if runtime_mode == "observe":
+        return _fail("EXEC_BLOCK_RUNTIME_MODE_OBSERVE",
+                     "Runtime mode is OBSERVE — does not allow trade execution")
+    if runtime_mode not in ("shadow", "paper"):
+        return _fail("EXEC_BLOCK_RUNTIME_MODE", f"Runtime mode: {runtime_mode} not allowed")
+    _stage("RUNTIME_MODE_PASSED", mode=runtime_mode)
 
-    # Session safety check — enforce market hours, opening window, entry cutoff
     session = check_session()
     if not session.can_trade:
-        log_info("AutoTrade: execution blocked by session rules",
-                 symbol=symbol, code=session.code, reason=session.reason)
-        return {"status": "blocked", "code": session.code, "reason": session.reason}
+        return _fail("EXEC_BLOCK_SESSION", f"Session blocked: {session.code}:{session.reason}")
+    _stage("SESSION_GATE_PASSED")
 
-    # Kill switch check
     if _kill_switch:
         try:
             ks_status = _kill_switch.get_status()
             if ks_status.get("active", False):
-                log_info("AutoTrade: execution blocked by kill switch", symbol=symbol)
-                return None
+                return _fail("EXEC_BLOCK_KILL_SWITCH", "Kill switch active")
         except Exception:
             pass
+    _stage("KILL_SWITCH_PASSED")
 
     direction = result["direction"]
+    try:
+        canonical_dir_for_exec = normalize_direction(direction)
+        direction = canonical_dir_for_exec.value
+    except ValueError:
+        return _fail("EXEC_BLOCK_INVALID_DIRECTION_NORM", f"Invalid direction normalization: {direction}")
+
     market_price = ai_snap.get("market_snapshot", {}).get("close") or ai_snap.get("market_snapshot", {}).get("last_price", 0)
     if not market_price or market_price <= 0:
-        log_info("AutoTrade: no market price for execution", symbol=symbol)
-        return None
+        # Fallback: try candle engine's latest close price (lazy import avoids circular dependency)
+        try:
+            import main as _main_mod
+            if hasattr(_main_mod, 'candle_engine') and _main_mod.candle_engine:
+                last = _main_mod.candle_engine.latest(symbol, "1m")
+                if last and last.get("close", 0) > 0:
+                    market_price = last["close"]
+        except Exception:
+            pass
+    if not market_price or market_price <= 0:
+        return _fail("EXEC_BLOCK_MARKET_PRICE_INVALID", f"No valid market price for {symbol}: {market_price}")
+    _stage("MARKET_PRICE_RESOLVED", price=market_price)
 
-    # ── Position gate ──
-    # Reject if there's already an open position in the same or opposite direction.
     if _paper_broker:
         existing_pos = _paper_broker.get_position(symbol)
         if existing_pos:
-            pos_direction = existing_pos.direction
-            expected_pos = "LONG" if direction == "BUY" else "SHORT"
-            if pos_direction == expected_pos:
-                log_info("AutoTrade: execution blocked — position already open",
-                         symbol=symbol, existing=pos_direction, attempted=direction)
-                return {"status": "blocked",
-                        "reason": f"Position already open: {pos_direction} on {symbol}"}
+            pos_dir = existing_pos.direction
+            if pos_dir == direction:
+                reason = f"Position already open: {pos_dir} on {symbol}"
+                _fail("EXEC_BLOCK_EXISTING_POSITION", reason)
+                return {"status": "blocked", "reason": reason}
             else:
-                log_info("AutoTrade: execution blocked — opposite position active",
-                         symbol=symbol, existing=pos_direction, attempted=direction)
-                return {"status": "blocked",
-                        "reason": f"Opposite position active: {pos_direction} on {symbol}, cannot {direction}"}
+                reason = f"Opposite position active: {pos_dir} on {symbol}, cannot {direction}"
+                _fail("EXEC_BLOCK_EXISTING_POSITION_OPPOSITE", reason)
+                return {"status": "blocked", "reason": reason}
+    _stage("POSITION_GATE_PASSED")
 
-    # ── Execution-level idempotency ──
-    # The same analysis_cycle_id + symbol must not produce duplicate trades.
     exec_idempotency_key = f"exec_{symbol}_{analysis_cycle_id}" if analysis_cycle_id else ""
     if exec_idempotency_key and _exec_gateway:
         existing_record = _exec_gateway.get_execution_by_key(exec_idempotency_key)
         if existing_record:
-            log_info("AutoTrade: idempotency hit — trade already executed for this cycle",
-                     symbol=symbol, cycle=analysis_cycle_id)
-            return existing_record
+            return _fail("EXEC_BLOCK_DUPLICATE_DECISION", "Duplicate analysis_cycle_id + symbol")
+    _stage("IDEMPOTENCY_PASSED")
 
-    # Build an AIDecision from the scoring snapshot
     try:
         decision = AIDecision(
             symbol=symbol,
@@ -1003,17 +1155,26 @@ async def _try_execute_trade(
             decision_id=ai_snap.get("decision_id", ""),
         )
     except Exception as e:
-        log_warn("AutoTrade: failed to build AIDecision", symbol=symbol, error=str(e))
-        return None
+        return _fail("EXEC_BLOCK_AI_DECISION_INVALID", f"AIDecision creation failed: {e}", exception=str(e)[:200])
+    _stage("AI_DECISION_CREATED")
 
-    # Build TradePlan via TradePlanner
     planner = _planner
     if not planner:
-        log_warn("AutoTrade: TradePlanner not available", symbol=symbol)
-        return None
+        return _fail("EXEC_BLOCK_PLANNER_UNAVAILABLE", "TradePlanner not available")
+    _stage("TRADE_PLANNER_CALLED")
+
+    snap = _snap_kwargs(ai_snap)
+    _scan_metrics["last_trade_plan_input"] = {
+        "symbol": symbol,
+        "direction": direction,
+        "entry_price": market_price,
+        "confidence": ai_snap.get("confidence", 0),
+        "opportunity_score": result.get("opportunity_score", 0),
+        "regime": regime_snap.get("regime", "unknown") if regime_snap else "unknown",
+        "analysis_cycle_id": analysis_cycle_id,
+    }
 
     try:
-        snap = _snap_kwargs(ai_snap)
         plan = planner.build_plan(
             decision=decision,
             price=market_price,
@@ -1024,23 +1185,46 @@ async def _try_execute_trade(
             sr_snap=snap.get("sr_snap"),
         )
     except Exception as e:
-        log_warn("AutoTrade: TradePlanner.build_plan failed", symbol=symbol, error=str(e))
-        return None
+        import traceback
+        tb = traceback.format_exc()
+        return _fail("EXEC_EXCEPTION_TRADE_PLANNER", f"TradePlanner.build_plan exception: {e}",
+                     exception=str(e)[:200], traceback=tb[:500])
+
+    _stage("TRADE_PLANNER_RETURNED")
+
+    if plan is None:
+        return _fail("EXEC_BLOCK_TRADE_PLAN_NONE", "TradePlanner returned None")
+
+    _scan_metrics["last_trade_plan"] = {
+        "qualified": plan.qualified,
+        "rejection_reason": plan.rejection_reason or "",
+        "direction": plan.direction,
+        "entry_price": plan.entry_price,
+        "stop_price": plan.stop_price,
+        "target_price": plan.target_price,
+        "position_size": plan.position_size,
+        "risk_reward": plan.risk_reward,
+        "risk_status": plan.risk_status,
+        "risk_block_reason": plan.risk_block_reason or "",
+    }
 
     if not plan.qualified:
-        log_info("AutoTrade: trade plan not qualified",
-                 symbol=symbol, reason=plan.rejection_reason)
-        return None
+        return _fail("EXEC_BLOCK_TRADE_PLAN_REJECTED", f"TradePlan rejected: {plan.rejection_reason}",
+                     plan_rejection=plan.rejection_reason)
+
+    _scan_metrics["trade_plans_created_total"] = _scan_metrics.get("trade_plans_created_total", 0) + 1
 
     if plan.risk_status == "blocked":
-        log_info("AutoTrade: trade plan blocked by risk",
-                 symbol=symbol, reason=plan.risk_block_reason)
-        return None
+        _scan_metrics["risk_blocked_total"] = _scan_metrics.get("risk_blocked_total", 0) + 1
+        return _fail("EXEC_BLOCK_RISK_REJECTED", f"Risk blocked: {plan.risk_block_reason}",
+                     risk_reason=plan.risk_block_reason)
 
-    # Execute via ExecutionGateway (the ONLY execution path)
+    _scan_metrics["risk_approved_total"] = _scan_metrics.get("risk_approved_total", 0) + 1
+
     if not _exec_gateway:
-        log_warn("AutoTrade: ExecutionGateway not available — no execution path", symbol=symbol)
-        return None
+        return _fail("EXEC_BLOCK_GATEWAY_UNAVAILABLE", "ExecutionGateway not available")
+
+    _stage("EXECUTION_GATEWAY_CALLED")
 
     try:
         record = _exec_gateway.execute(
@@ -1056,24 +1240,30 @@ async def _try_execute_trade(
             decision_id=decision.decision_id,
             analysis_cycle_id=analysis_cycle_id,
         )
-        log_info("AutoTrade: execution submitted via gateway",
-                 symbol=symbol, side=direction, qty=plan.position_size,
-                 status=record.status.value if record.status else "unknown")
-
-        # Validate that execution actually produced a position (not a stub)
-        if record.status.value == "filled" and _paper_broker:
-            pos = _paper_broker.get_position(symbol)
-            if not pos:
-                log_error("AutoTrade: gateway reported filled but no PaperPosition exists",
-                          symbol=symbol, exec_id=record.execution_id)
-                return {"status": "failed",
-                        "reason": "Gateway reported filled but no position created"}
-
-        return record.to_dict()
-
     except Exception as e:
-        log_warn("AutoTrade: ExecutionGateway.execute failed", symbol=symbol, error=str(e))
-        return None
+        import traceback
+        tb = traceback.format_exc()
+        return _fail("EXEC_EXCEPTION_GATEWAY", f"ExecutionGateway.execute exception: {e}",
+                     exception=str(e)[:200], traceback=tb[:500])
+
+    _stage("PAPERBROKER_CALLED", status=record.status.value if record.status else "unknown")
+
+    if record.status.value == "filled" and _paper_broker:
+        pos = _paper_broker.get_position(symbol)
+        if not pos:
+            return _fail("EXEC_BLOCK_PAPER_POSITION_MISSING",
+                         "Gateway reported filled but no PaperPosition created")
+    else:
+        failure_reason = record.rejection_reason or record.status.value or "unknown"
+        return _fail("EXEC_BLOCK_GATEWAY_REJECTED", f"Gateway rejected: {failure_reason}")
+
+    _stage("PAPER_POSITION_CREATED")
+    _scan_metrics["paper_trades_created_total"] = _scan_metrics.get("paper_trades_created_total", 0) + 1
+    _scan_metrics["last_block_stage"] = None
+    _scan_metrics["last_block_code"] = None
+    _scan_metrics["last_block_reason"] = None
+
+    return record.to_dict()
 
 
 def _snap_kwargs(snap: dict | None) -> dict:
@@ -1127,100 +1317,21 @@ async def _health_watchdog_loop():
             log_warn("AutoTrade: health watchdog error", error=str(e))
 
 
-# ── Legacy scan cycle (replaced by event-driven — kept for health only) ──
+# ── Legacy scan cycle (DEPRECATED — no runtime dependency) ──
+# This function is defined for reference only. It is NOT called by any runtime path.
+# All analysis is event-driven via _handle_candle_closed.
+# Delete this function after verifying no import references it.
 
 
 async def _health_scan():
     """
-    Health-oriented scan — no longer the primary analysis mechanism.
+    DEPRECATED. Replaced by event-driven CANDLE_CLOSED → _handle_candle_closed.
 
-    The old _scan_cycle() that read cached snapshots is GONE.
-    Analysis is now driven by CANDLE_CLOSED events.
-    This scan only checks for candidates with fresh data and runs a
-    periodic readiness check.
-
-    Increments scan metrics so the dashboard shows activity even
-    when no trade is found.
+    This function is no longer called by any runtime code path. It is preserved
+    for reference only and must not be used for display or metrics.
     """
-    global _engine_state, _last_workspace_snapshot, _scan_metrics
-
-    try:
-        symbols_scanned = 0
-        candidates = []
-        best_candidate = None
-
-        symbols = list_canonical_names()
-        _scan_metrics["total_scan_cycles"] += 1
-        _scan_metrics["last_scan_started_at"] = datetime.now(timezone.utc).isoformat()
-
-        for symbol in symbols:
-            if not _engine_running or _engine_paused:
-                return
-
-            symbols_scanned += 1
-            _scan_metrics["symbols_scanned_total"] += 1
-
-            # Get AI snapshot (latest from event-driven pipeline)
-            try:
-                ai_snap = _get_ai().latest(symbol)
-            except Exception:
-                ai_snap = None
-
-            # Get regime snapshot (fresh from event-driven pipeline)
-            try:
-                regime_engine = _get_regime()
-                regime_snap = regime_engine.latest(symbol) if regime_engine else None
-            except Exception:
-                regime_snap = None
-
-            # Score opportunity from fresh data
-            result = _build_opportunity_score(symbol, ai_snap, regime_snap)
-            candidates.append(result)
-
-            # Increment analysis counter
-            if ai_snap or result.get("direction") != "NONE":
-                _scan_metrics["analyses_completed_total"] += 1
-            dir_ = result.get("direction", "NONE")
-            if dir_ == "WAIT":
-                _scan_metrics["no_trade_decisions_total"] += 1
-            elif dir_ == "NO_TRADE":
-                _scan_metrics["no_trade_decisions_total"] += 1
-            elif dir_ in ("BUY", "SELL"):
-                if result.get("reject_reasons"):
-                    _scan_metrics["risk_blocked_total"] += 1
-
-            # Candidate found?
-            if result.get("opportunity_score", 0) >= 50 and dir_ in ("BUY", "SELL"):
-                _scan_metrics["candidates_found_total"] += 1
-
-        _scan_metrics["symbols_scanned_current"] = symbols_scanned
-
-        # Update analysis status based on results
-        _update_analysis_status_from_results(candidates)
-
-        # Sort by score descending
-        candidates.sort(key=lambda c: c["opportunity_score"], reverse=True)
-
-        # Find best non-rejected candidate
-        for c in candidates:
-            if not c["reject_reasons"] and c["direction"] in ("BUY", "SELL") and c["opportunity_score"] >= 50:
-                c["selected"] = True
-                best_candidate = c
-                break
-
-        # Build workspace snapshot
-        _last_workspace_snapshot = _build_workspace_snapshot(
-            symbols_scanned=symbols_scanned,
-            candidates=candidates,
-            best_candidate=best_candidate,
-        )
-
-        _scan_metrics["last_scan_completed_at"] = datetime.now(timezone.utc).isoformat()
-
-    except Exception as e:
-        log_warn("AutoTrade: health scan error", error=str(e))
-        if _last_workspace_snapshot:
-            _last_workspace_snapshot["errors"] = _last_workspace_snapshot.get("errors", []) + [str(e)]
+    # No-op — the event-driven pipeline owns all metrics now.
+    pass
 
 
 def _build_workspace_snapshot(
@@ -1235,7 +1346,7 @@ def _build_workspace_snapshot(
     signal: TradeSignal | None = None,
     errors: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Build the workspace snapshot dict from available data."""
+    """Build the workspace snapshot dict from event-driven data."""
     candidates = candidates or []
     errors = errors or []
 
@@ -1248,6 +1359,31 @@ def _build_workspace_snapshot(
     freshness_info = {}
     if _freshness_tracker:
         freshness_info = _freshness_tracker.get_status_summary()
+
+    # Build per-symbol current market analysis from authoritative state
+    current_market_analysis = []
+    for symbol, state in sorted(_analysis_state_by_symbol.items()):
+        current_market_analysis.append({
+            "symbol": symbol,
+            "status": state.get("status", "WAITING"),
+            "direction": state.get("direction", "NONE"),
+            "display_decision": state.get("display_decision", "NO TRADE"),
+            "bias": state.get("bias", "NEUTRAL"),
+            "confidence": state.get("confidence", 0),
+            "opportunity_score": state.get("opportunity_score", 0),
+            "reason": state.get("reason", "NO_VALID_SIGNAL"),
+            "reject_reasons": state.get("reject_reasons", []),
+            "risk_status": state.get("risk_status", "UNKNOWN"),
+            "analysed_at": state.get("analysed_at", ""),
+        })
+
+    # Derive scan data from authoritative event-driven metrics
+    configured_symbols = len(list_canonical_names())
+    live_symbols = sum(
+        1 for sym in list_canonical_names()
+        if _freshness_tracker and _freshness_tracker.get(sym)
+        and _freshness_tracker.get(sym).tick_freshness == FRESHNESS_LIVE
+    )
 
     return {
         "provider": {
@@ -1275,10 +1411,18 @@ def _build_workspace_snapshot(
         },
         "metrics": dict(_scan_metrics),
         "scan": {
-            "symbols_scanned": symbols_scanned,
-            "candidates_found": len([c for c in candidates if c.get("opportunity_score", 0) >= 50]) if candidates else 0,
-            "last_scan_time": datetime.now(timezone.utc).isoformat(),
+            "configured_symbols": configured_symbols,
+            "symbols_with_live_ticks": live_symbols,
+            "symbols_analysed": _scan_metrics.get("symbols_scanned_total", 0),
+            "analyses_completed_total": _scan_metrics.get("analyses_completed_total", 0),
+            "no_trade_decisions_total": _scan_metrics.get("no_trade_decisions_total", 0),
+            "candidates_found_total": _scan_metrics.get("candidates_found_total", 0),
+            "risk_blocked_total": _scan_metrics.get("risk_blocked_total", 0),
+            "paper_trades_created_total": _scan_metrics.get("paper_trades_created_total", 0),
+            "last_analysis_at": _scan_metrics.get("last_analysis_completed_at"),
+            "last_candle_closed_at": _scan_metrics.get("last_candle_closed_at"),
         },
+        "current_market_analysis": current_market_analysis,
         "candidates": candidates[:3] if candidates else [],
         "selected_opportunity": best_candidate,
         "decision": decision,
@@ -1293,6 +1437,12 @@ def _build_workspace_snapshot(
         "alerts": [],
         "timeline": [],
         "errors": errors,
+
+        # Invariant: if analyses_completed > 0, symbols_scanned must also be > 0
+        "_invariant_check": (
+            _scan_metrics.get("analyses_completed_total", 0) > 0
+            and _scan_metrics.get("symbols_scanned_total", 0) == 0
+        ),
     }
 
 
@@ -1491,6 +1641,7 @@ async def auto_trade_diagnostics():
         "event_handlers_registered": False,
         "blocked_reason": _analysis_blocked_reason,
         "blocked_category": _analysis_blocked_category,
+        "per_symbol_state": len(_analysis_state_by_symbol),
     }
     if _event_bus:
         # Check if our handlers are registered on the EventBus
@@ -1502,6 +1653,13 @@ async def auto_trade_diagnostics():
             )
         except Exception:
             pass
+
+    # ── Invariant check ──
+    m = _scan_metrics
+    invariant_violation = (
+        m.get("analyses_completed_total", 0) > 0
+        and m.get("symbols_scanned_total", 0) == 0
+    )
 
     # ── Market data info (tick source classification) ──
     ws_connected = False
@@ -1609,6 +1767,20 @@ async def auto_trade_diagnostics():
         "freshness": freshness_summary,
         "metrics": dict(_scan_metrics),
         "blocked_reasons": blocked_reasons,
+        "invariant_violation": invariant_violation,
+        "current_market_analysis": [
+            {
+                "symbol": s,
+                "status": state.get("status", "WAITING"),
+                "direction": state.get("direction", "NONE"),
+                "display_decision": state.get("display_decision", "NO TRADE"),
+                "bias": state.get("bias", "NEUTRAL"),
+                "opportunity_score": state.get("opportunity_score", 0),
+                "reason": state.get("reason", ""),
+                "analysed_at": state.get("analysed_at", ""),
+            }
+            for s, state in sorted(_analysis_state_by_symbol.items())
+        ],
     }
 
 
@@ -1796,4 +1968,49 @@ async def auto_trade_status():
         "provider": _get_zerodha_status_dict(),
         "readiness": _check_mandatory_systems(),
         "freshness": _freshness_tracker.get_status_summary() if _freshness_tracker else {},
+    }
+
+
+@router.post("/api/auto-trade/runtime-mode")
+async def auto_trade_set_runtime_mode(payload: dict):
+    """Set the runtime mode. Allowed: observe, shadow, paper."""
+    global _runtime_mgr
+    mode = (payload or {}).get("mode", "").strip().lower()
+    if not mode:
+        return {"success": False, "message": "Missing 'mode' field"}
+
+    if not _runtime_mgr:
+        return {"success": False, "message": "RuntimeModeManager not initialized"}
+
+    previous = _runtime_mgr.mode.value if _runtime_mgr else "unknown"
+    result = _runtime_mgr.set_mode(mode)
+    new_mode = _runtime_mgr.mode.value if _runtime_mgr else "unknown"
+
+    if result.get("success"):
+        _record_audit("RUNTIME_MODE_CHANGED", {
+            "previous_mode": previous,
+            "new_mode": new_mode,
+            "source": "api",
+            "user_action": True,
+        })
+
+    return {
+        "success": result.get("success", False),
+        "previous_mode": previous,
+        "mode": new_mode,
+        "message": result.get("message", ""),
+    }
+
+
+@router.get("/api/auto-trade/runtime-mode")
+async def auto_trade_get_runtime_mode():
+    """Get the current runtime mode."""
+    mode = _get_runtime_mode()
+    return {
+        "mode": mode,
+        "observe": mode == "observe",
+        "shadow": mode == "shadow",
+        "paper": mode == "paper",
+        "controlled_live": mode == "controlled_live",
+        "can_execute_paper": _runtime_mgr.can_execute_paper() if _runtime_mgr else False,
     }

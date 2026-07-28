@@ -39,6 +39,10 @@ class AIUnit:
         self._update_count = 0
         # Track candle versions for version-aware barrier
         self._input_versions: dict[str, str] = {}
+        # ── Version-barrier diagnostics ──
+        self._barrier_failure_count = 0
+        self._last_barrier_failure: dict[str, Any] | None = None
+        self._last_barrier_failure_time: str = ""
 
     def update_context(self, payload: dict):
         if payload.get("symbol") == self.symbol:
@@ -67,12 +71,39 @@ class AIUnit:
     def _all_inputs_same_version(self) -> bool:
         """Version-aware barrier: all 3 inputs must share the same candle_version."""
         if len(self._input_versions) < 3:
+            self._barrier_failure_count += 1
+            missing = [k for k in ("context", "mtf", "sr") if k not in self._input_versions]
+            self._last_barrier_failure = {
+                "reason": f"Missing inputs: {missing}",
+                "context_only": "context" in self._input_versions,
+                "versions": dict(self._input_versions),
+            }
+            self._last_barrier_failure_time = datetime.now(timezone.utc).isoformat()
             return False
         versions = set(self._input_versions.values())
         if len(versions) != 1:
+            self._barrier_failure_count += 1
+            self._last_barrier_failure = {
+                "reason": f"Version mismatch: context={self._input_versions['context']} mtf={self._input_versions['mtf']} sr={self._input_versions['sr']}",
+                "versions": dict(self._input_versions),
+            }
+            self._last_barrier_failure_time = datetime.now(timezone.utc).isoformat()
             return False
         cv = versions.pop()
         return bool(cv)
+
+    def barrier_diagnostics(self) -> dict[str, Any]:
+        """Return version-barrier state for monitoring."""
+        return {
+            "symbol": self.symbol,
+            "input_versions": dict(self._input_versions),
+            "barrier_failure_count": self._barrier_failure_count,
+            "last_barrier_failure": self._last_barrier_failure,
+            "last_barrier_failure_time": self._last_barrier_failure_time,
+            "has_context": self._context is not None,
+            "has_mtf": self._mtf is not None,
+            "has_sr": self._sr is not None,
+        }
 
     def _produce(self):
         if not self._context:
@@ -195,4 +226,9 @@ class AIDecisionEngine:
         s = dict(self._stats)
         s["running"] = self._running
         s["units"] = len(self._units)
+        # Barrier diagnostics for all symbols
+        s["barrier_diagnostics"] = {
+            sym: unit.barrier_diagnostics()
+            for sym, unit in self._units.items()
+        }
         return s

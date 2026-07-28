@@ -16,8 +16,8 @@ class RuntimeMode(str, Enum):
     CONTROLLED_LIVE = "controlled_live"
 
 
-# Phase 39 hard-coded allowed modes + CONTROLLED_LIVE for Phase 54
-ALLOWED_MODES = {RuntimeMode.OBSERVE, RuntimeMode.SHADOW}
+# Allowed modes: OBSERVE, SHADOW, and PAPER (paper trading active)
+ALLOWED_MODES = {RuntimeMode.OBSERVE, RuntimeMode.SHADOW, RuntimeMode.PAPER}
 CONTROLLED_LIVE_ENABLED = False  # Set True during authorized controlled live session
 
 
@@ -81,7 +81,7 @@ class RuntimeModeManager:
         return self._controlled_live_active
 
     def can_execute_paper(self) -> bool:
-        return False  # Phase 39: NEVER
+        return self._mode == RuntimeMode.PAPER
 
     def get_status(self) -> dict:
         return {

@@ -96,7 +96,8 @@ class TestOpportunityScoring:
         result = _build_opportunity_score("NIFTY 50", ai_snap, regime_snap)
         assert result["symbol"] == "NIFTY 50"
         assert result["opportunity_score"] >= 70
-        assert result["direction"] == "BUY"
+        # Direction normalised to canonical value
+        assert result["direction"] in ("LONG", "BUY"), f"Expected LONG/BUY got {result['direction']}"
         assert result["confidence"] == 82
         assert len(result["reject_reasons"]) == 0
         assert len(result["reasons"]) > 0
@@ -120,7 +121,8 @@ class TestOpportunityScoring:
     def test_wait_direction_has_rejection(self, ai_snap, regime_snap):
         ai_snap["trade_plan"]["direction"] = "WAIT"
         result = _build_opportunity_score("NIFTY 50", ai_snap, regime_snap)
-        assert any("WAIT" in r for r in result["reject_reasons"])
+        # WAIT normalises to NONE, so check for "no clear trade direction"
+        assert any("No clear trade direction" in r for r in result["reject_reasons"])
 
     def test_low_grade_rejected(self, ai_snap, regime_snap):
         ai_snap["score_grade"] = "VERY_LOW"
@@ -702,7 +704,7 @@ class TestOpportunityScoreBoundaries:
         assert any("MTF agreement" in r for r in result["reject_reasons"])
 
     def test_no_trade_wait_direction(self):
-        """WAIT direction must produce a rejection."""
+        """WAIT direction must produce a rejection (normalises to NONE)."""
         from api.auto_trade import _build_opportunity_score
         ai_snap = {
             "score": 75, "confidence": 82, "risk_level": "MODERATE",
@@ -711,7 +713,8 @@ class TestOpportunityScoreBoundaries:
             "mtf_agreement": {"agreement_percent": 85},
         }
         result = _build_opportunity_score("T", ai_snap, None)
-        assert any("WAIT" in r for r in result["reject_reasons"])
+        # WAIT normalises to NONE → "No clear trade direction"
+        assert any("No clear trade direction" in r for r in result["reject_reasons"])
 
     def test_contribution_table_computation(self):
         """Verify exact contribution of each factor matches the weight specification."""
@@ -1032,12 +1035,13 @@ class TestSafetyControlsPreserved:
         result = mgr.set_mode("live")
         assert result["success"] is False, "LIVE mode must be blocked"
 
-    def test_paper_mode_blocked(self):
-        """Paper mode must remain blocked by RuntimeModeManager."""
+    def test_paper_mode_allowed(self):
+        """Paper mode must now be allowed by RuntimeModeManager for paper trading."""
         from trading.runtime_mode import RuntimeModeManager
         mgr = RuntimeModeManager()
         result = mgr.set_mode("paper")
-        assert result["success"] is False, "PAPER mode must be blocked"
+        assert result["success"] is True, "PAPER mode must be allowed for paper trading"
+        assert mgr.is_paper() is True
 
     def test_human_approval_requirement_preserved(self):
         """Controlled live must require explicit activation, not just set_mode."""
@@ -1167,7 +1171,8 @@ class TestExecutionBridge:
         }
         result = _build_opportunity_score("NIFTY 50", ai_snap, None)
         assert result["opportunity_score"] >= 50
-        assert result["direction"] == "BUY"
+        # Direction is normalised to LONG
+        assert result["direction"] in ("LONG", "BUY"), f"Expected LONG/BUY got {result['direction']}"
         assert "execution" not in result  # not yet executed
 
     def test_gateway_mode_is_paper_by_default(self):

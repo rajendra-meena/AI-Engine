@@ -29,6 +29,7 @@ from enum import Enum
 
 from risk.risk_engine import RiskEngine
 from risk.trade_validator import TradeIntent
+from core.enums import TradeDirection, normalize_direction, display_direction
 from utils.logger import log_info, log_warn, log_error
 
 
@@ -241,13 +242,29 @@ class ExecutionGateway:
         eid = f"exec_{uuid.uuid4().hex[:12]}"
         now = datetime.now(timezone.utc).isoformat()
 
+        # Canonical direction → broker-compatible side (BUY/SELL)
+        try:
+            canonical = normalize_direction(side)
+            if canonical == TradeDirection.NONE:
+                record = ExecutionRecord(
+                    execution_id=eid, trace_id=trace_id or f"trace_{uuid.uuid4().hex[:8]}",
+                    symbol=symbol, side=side, status=ExecutionStatus.BLOCKED,
+                    rejection_reason=f"Cannot execute NONE direction: {side}",
+                )
+                self._store(record, idempotency_key)
+                return record
+            # Store canonical value in record, convert to BUY/SELL for broker
+            broker_side = display_direction(canonical)  # "BUY" or "SELL"
+        except ValueError:
+            broker_side = side  # already BUY/SELL, pass through
+
         record = ExecutionRecord(
             execution_id=eid,
             trade_plan_id=trade_plan_id,
             trace_id=trace_id or f"trace_{uuid.uuid4().hex[:8]}",
             idempotency_key=idempotency_key,
             symbol=symbol,
-            side=side,
+            side=side,  # canonical LONG/SHORT stored in record
             quantity=quantity,
             requested_price=price,
             stop_loss=stop_loss,
@@ -262,8 +279,8 @@ class ExecutionGateway:
             log_info("Execution: idempotency hit", key=idempotency_key)
             return self._idempotency[idempotency_key]
 
-        # 2. Safety checks
-        checks = self._run_safety_checks(side, price, quantity, stop_loss, target, live_token)
+        # 2. Safety checks (use broker-normalized side for geometry)
+        checks = self._run_safety_checks(broker_side, price, quantity, stop_loss, target, live_token)
         record.safety_checks = checks
         failed_checks = [name for name, passed in checks.items() if not passed]
 
@@ -279,7 +296,7 @@ class ExecutionGateway:
         if self._risk_engine:
             intent = TradeIntent(
                 symbol=symbol,
-                side=side,
+                side=side,  # canonical LONG/SHORT passed to risk
                 quantity=quantity,
                 price=price,
                 order_type="MARKET",
@@ -292,7 +309,7 @@ class ExecutionGateway:
             )
             validation = self._risk_engine.validate(intent)
             record.risk_status = "approved" if validation.execution_permitted else "blocked"
-            if not validation.execution_permitted:
+            if not validation.execution_permitted or not validation.passed or validation.rejected_by or validation.risk_grade == "CRITICAL":
                 record.status = ExecutionStatus.BLOCKED
                 record.rejection_reason = f"Risk re-check blocked: {'; '.join(validation.rejected_by)}"
                 self._store(record, idempotency_key)
@@ -301,9 +318,10 @@ class ExecutionGateway:
         record.status = ExecutionStatus.APPROVED
 
         # 4. Execute via appropriate broker
+        # Pass broker-normalized side (BUY/SELL) to broker layer
         record.status = ExecutionStatus.SUBMITTING
         if self._mode in (ExecutionMode.PAPER, ExecutionMode.DISABLED):
-            result = self._paper_execute(record)
+            result = self._paper_execute(record, broker_side)
         elif self._mode == ExecutionMode.LIVE and self.is_live_armed():
             result = self._live_execute(record)
         else:
@@ -382,17 +400,17 @@ class ExecutionGateway:
 
     # ── Paper execution — delegates to PaperBroker ──
 
-    def _paper_execute(self, record: ExecutionRecord) -> dict[str, Any]:
+    def _paper_execute(self, record: ExecutionRecord, broker_side: str = "BUY") -> dict[str, Any]:
         if not self._paper_broker:
             log_error("Execution: PaperBroker not configured")
             return {"success": False, "status": "failed", "reason": "PaperBroker not configured"}
 
         log_info("Execution: delegating to PaperBroker",
-                 symbol=record.symbol, side=record.side, qty=record.quantity)
+                 symbol=record.symbol, side=broker_side, qty=record.quantity)
 
         result = self._paper_broker.execute(
             symbol=record.symbol,
-            side=record.side,
+            side=broker_side,
             quantity=record.quantity,
             price=record.requested_price,
             stop_loss=record.stop_loss,

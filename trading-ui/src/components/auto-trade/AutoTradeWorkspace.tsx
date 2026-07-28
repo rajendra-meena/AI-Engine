@@ -215,6 +215,10 @@ export function AutoTradeWorkspace() {
       const data = await autoTradeService.getWorkspace()
       if (!isToggling) {
         setWorkspace(data)
+        // Sync trading mode from authoritative backend
+        if (data.engine?.mode) {
+          setTradingMode(data.engine.mode)
+        }
       }
       setError(null)
     } catch (e) {
@@ -491,7 +495,16 @@ export function AutoTradeWorkspace() {
             <SectionCard title="Trading Mode" icon={<Shield className="w-3.5 h-3.5 text-primary" />}>
               <div className="flex flex-wrap gap-1.5">
                 {TRADING_MODES.map((mode) => (
-                  <button key={mode.id} onClick={() => setTradingMode(mode.id)}
+                  <button key={mode.id} onClick={async () => {
+                    setIsToggling(true);
+                    try {
+                      await autoTradeService.setRuntimeMode(mode.id);
+                      await fetchWorkspace();
+                    } catch (e) {
+                      setError(`Failed to set mode to ${mode.label}`);
+                    }
+                    setIsToggling(false);
+                  }}
                     className={cn(
                       "flex items-center gap-1 px-2 py-1.5 rounded text-[10px] font-medium border transition-colors",
                       tradingMode === mode.id
@@ -721,13 +734,17 @@ export function AutoTradeWorkspace() {
               {isRunning && workspace?.scan && (
                 <div className="flex items-center gap-2 p-2 rounded border bg-muted/20 text-[9px] text-muted-foreground">
                   <Activity className="w-3 h-3" />
-                  <span>Scanned {workspace.scan.symbols_scanned} symbols</span>
+                  <span>{workspace.scan.symbols_analysed ?? 0} analysed</span>
                   <span className="text-muted-foreground/50">·</span>
-                  <span>{workspace.scan.candidates_found} candidates</span>
-                  {workspace.scan.last_scan_time && (
+                  <span>{workspace.scan.no_trade_decisions_total ?? 0} no-trade</span>
+                  <span className="text-muted-foreground/50">·</span>
+                  <span>{workspace.scan.score_qualified_candidates_total ?? 0} qualified</span>
+                  <span className="text-muted-foreground/50">·</span>
+                  <span>{workspace.scan.paper_trades_created_total ?? 0} paper trades</span>
+                  {workspace.scan.last_analysis_at && (
                 <>
                   <span className="text-muted-foreground/50">·</span>
-                  <span className="text-[8px]">Updated {timeAgo(workspace.scan.last_scan_time)}</span>
+                  <span className="text-[8px]">Updated {timeAgo(workspace.scan.last_analysis_at)}</span>
                 </>
               )}
             </div>
@@ -1043,12 +1060,52 @@ export function AutoTradeWorkspace() {
         {isRunning && workspace?.scan && (
           <SectionCard title="Scan Status" icon={<Activity className="w-3.5 h-3.5 text-primary" />}>
             <div className="grid grid-cols-2 gap-1.5">
-              <Metric label="Symbols" value={workspace.scan.symbols_scanned} />
-              <Metric label="Candidates" value={workspace.scan.candidates_found} />
+              <Metric label="Analysed" value={workspace.scan.symbols_analysed ?? 0} />
+              <Metric label="No-Trade" value={workspace.scan.no_trade_decisions_total ?? 0} />
+              <Metric label="Directional" value={workspace.scan.raw_directional_signals_total ?? 0} />
+              <Metric label="Qualified" value={workspace.scan.score_qualified_candidates_total ?? 0} />
+              <Metric label="Trade Plans" value={workspace.scan.trade_plans_created_total ?? 0} />
+              <Metric label="Risk Blocked" value={workspace.scan.risk_blocked_total ?? 0} />
+              <Metric label="Exec Attempts" value={workspace.scan.execution_attempts_total ?? 0} />
+              <Metric label="Paper Trades" value={workspace.scan.paper_trades_created_total ?? 0} />
             </div>
-            {workspace.scan.last_scan_time && (
-              <div className="text-[9px] text-muted-foreground mt-1">Last scan: {timeAgo(workspace.scan.last_scan_time)}</div>
+            {workspace.scan.last_analysis_at && (
+              <div className="text-[9px] text-muted-foreground mt-1">Last analysis: {timeAgo(workspace.scan.last_analysis_at)}</div>
             )}
+          </SectionCard>
+        )}
+
+        {/* CURRENT MARKET ANALYSIS */}
+        {isRunning && workspace?.current_market_analysis && workspace.current_market_analysis.length > 0 && (
+          <SectionCard title="Current Market Analysis" icon={<Brain className="w-3.5 h-3.5 text-primary" />}>
+            <div className="space-y-1.5">
+              {workspace.current_market_analysis.map((analysis) => (
+                <div key={analysis.symbol} className="flex items-start gap-2 p-2 rounded border bg-card/50 text-[10px]">
+                  <div className="shrink-0 min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{analysis.symbol}</span>
+                      <span className={cn(
+                        "px-1 py-0.5 rounded text-[8px] font-medium",
+                        analysis.status === "ANALYSED" ? "bg-emerald-500/10 text-emerald-500" :
+                        analysis.status === "ERROR" ? "bg-red-500/10 text-red-500" :
+                        "bg-amber-500/10 text-amber-500"
+                      )}>{analysis.status}</span>
+                    </div>
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-[9px] text-muted-foreground">
+                      <span>Bias: <strong>{analysis.bias}</strong></span>
+                      <span>Decision: <strong>{analysis.display_decision}</strong></span>
+                      <span>Score: <strong>{analysis.opportunity_score}/100</strong></span>
+                    </div>
+                    {analysis.reason && (
+                      <div className="mt-1 text-[8px] text-muted-foreground/70">{analysis.reason}</div>
+                    )}
+                    {analysis.analysed_at && (
+                      <div className="mt-0.5 text-[8px] text-muted-foreground/50">Last analysed: {timeAgo(analysis.analysed_at)}</div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           </SectionCard>
         )}
       </div>

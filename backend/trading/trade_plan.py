@@ -16,6 +16,7 @@ from typing import Any
 from ai_decision.decision_service import AIDecision
 from risk.trade_validator import TradeIntent
 from risk.risk_engine import RiskEngine
+from core.enums import normalize_direction, TradeDirection
 
 
 def _now() -> str:
@@ -24,6 +25,22 @@ def _now() -> str:
 
 def _new_id() -> str:
     return f"tplan_{uuid.uuid4().hex[:12]}"
+
+
+def _canonical_side(direction: str) -> str:
+    """
+    Normalize LONG→BUY, SHORT→SELL for internal direction comparisons
+    in strategy qualification, stop loss, and target calculation.
+    """
+    try:
+        d = normalize_direction(direction)
+        if d == TradeDirection.LONG:
+            return "BUY"
+        if d == TradeDirection.SHORT:
+            return "SELL"
+        return "WAIT"
+    except ValueError:
+        return "WAIT"
 
 
 @dataclass
@@ -35,7 +52,7 @@ class TradePlan:
 
     # Identity
     symbol: str = ""
-    direction: str = "WAIT"  # BUY, SELL, WAIT
+    direction: str = "NONE"  # Canonical: LONG, SHORT, NONE
     strategy: str = "ai_strategy"
     strategy_version: str = "1.0"
 
@@ -161,7 +178,9 @@ class StrategyEngine:
         """
         reasoning: list[str] = []
         score: float = 50.0  # base score
-        direction = (decision.direction or "WAIT").upper()
+        raw_direction = (decision.direction or "WAIT").upper()
+        # Normalize canonical LONG/SHORT to BUY/SELL for internal comparisons
+        direction = _canonical_side(raw_direction)
 
         # AI says WAIT — always reject
         if direction == "WAIT":
@@ -327,7 +346,7 @@ class TradePlanner:
             expires_at=(datetime.now(timezone.utc) + timedelta(hours=4)).isoformat(),
         )
 
-        if decision.direction == "WAIT":
+        if _canonical_side(decision.direction or "") == "WAIT":
             plan.qualified = False
             plan.rejection_reason = "AI_WAIT"
             plan.strategy_reasoning = ["AI decision is WAIT"]
@@ -439,9 +458,12 @@ class TradePlanner:
         indicator_snap: dict | None = None,
     ) -> dict | None:
         """Calculate logical stop loss based on market structure and S/R."""
+        side = _canonical_side(direction)
+        if not side:
+            return None
         # Use S/R levels for stop
         if sr_snap:
-            if direction == "BUY":
+            if side == "BUY":
                 level = sr_snap.get("nearest_support")
                 if level and level < entry:
                     dist = abs(entry - level)
@@ -466,7 +488,7 @@ class TradePlanner:
             atr = indicator_snap.get("atr_14") or indicator_snap.get("atr")
         if atr and atr > 0:
             atr_dist = atr * 2
-            if direction == "BUY":
+            if side == "BUY":
                 stop = entry - atr_dist
                 return {
                     "price": round(stop, 2),
@@ -483,7 +505,7 @@ class TradePlanner:
 
         # Fallback: percentage-based
         pct = 0.01  # 1%
-        if direction == "BUY":
+        if side == "BUY":
             stop = entry * (1 - pct)
             return {"price": round(stop, 2), "distance": round(entry * pct, 2), "reason": "1% below entry (fallback)"}
         else:
@@ -502,11 +524,14 @@ class TradePlanner:
         indicator_snap: dict | None = None,
     ) -> dict | None:
         """Calculate logical target based on market structure and S/R."""
+        side = _canonical_side(direction)
+        if not side:
+            return None
         risk = abs(entry - stop_price)
         min_reward = risk * 2  # minimum 2:1 R:R target
 
         if sr_snap:
-            if direction == "BUY":
+            if side == "BUY":
                 level = sr_snap.get("nearest_resistance")
                 if level and level > entry:
                     reward = level - entry
@@ -533,7 +558,7 @@ class TradePlanner:
             atr = indicator_snap.get("atr_14") or indicator_snap.get("atr")
         if atr and atr > 0:
             target_dist = max(atr * 3, min_reward)
-            if direction == "BUY":
+            if side == "BUY":
                 tgt = entry + target_dist
             else:
                 tgt = entry - target_dist
@@ -545,7 +570,7 @@ class TradePlanner:
 
         # Fixed R:R fallback
         target_dist = max(risk * 2, entry * 0.02)
-        if direction == "BUY":
+        if side == "BUY":
             tgt = entry + target_dist
         else:
             tgt = entry - target_dist

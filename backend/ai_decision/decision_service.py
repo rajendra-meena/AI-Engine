@@ -36,7 +36,7 @@ class AIDecision:
     symbol: str = ""
     timestamp: str = ""
     candle_timestamp: str = ""
-    direction: str = "WAIT"  # BUY, SELL, WAIT
+    direction: str = "NONE"  # Canonical: LONG, SHORT, NONE
     decision: str = "NO_TRADE"
     score: int = 0
     confidence: int = 0

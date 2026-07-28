@@ -17,9 +17,35 @@ export interface ReadinessCheck {
 }
 
 export interface ScanInfo {
-  symbols_scanned: number
-  candidates_found: number
-  last_scan_time: string | null
+  configured_symbols: number
+  symbols_with_live_ticks: number
+  symbols_analysed: number
+  analyses_completed_total: number
+  no_trade_decisions_total: number
+  raw_directional_signals_total: number
+  score_qualified_candidates_total: number
+  trade_plans_created_total: number
+  risk_approved_total: number
+  risk_blocked_total: number
+  execution_attempts_total: number
+  execution_failed_total: number
+  paper_trades_created_total: number
+  last_analysis_at: string | null
+  last_candle_closed_at: string | null
+}
+
+export interface CurrentMarketAnalysis {
+  symbol: string
+  status: string
+  direction: string
+  display_decision: string
+  bias: string
+  confidence: number
+  opportunity_score: number
+  reason: string
+  reject_reasons: string[]
+  risk_status: string
+  analysed_at: string
 }
 
 export interface OpportunityCandidate {
@@ -77,6 +103,7 @@ export interface WorkspaceResponse {
   engine: AutoTradeEngine
   readiness: ReadinessCheck
   scan: ScanInfo
+  current_market_analysis?: CurrentMarketAnalysis[]
   candidates: OpportunityCandidate[]
   selected_opportunity: OpportunityCandidate | null
   decision: any
@@ -104,6 +131,13 @@ export interface EngineControlResponse {
   state: string
   message: string
   blocked_systems?: string[]
+}
+
+export interface RuntimeModeResponse {
+  success: boolean
+  previous_mode: string
+  mode: string
+  message?: string
 }
 
 class AutoTradeService {
@@ -142,6 +176,22 @@ class AutoTradeService {
   async getStatus(): Promise<{ engine: AutoTradeEngine; readiness: ReadinessCheck }> {
     const res = await fetch(`${this.base}/api/auto-trade/status`)
     if (!res.ok) throw new Error("Failed to fetch engine status")
+    return res.json()
+  }
+
+  async setRuntimeMode(mode: string): Promise<RuntimeModeResponse> {
+    const res = await fetch(`${this.base}/api/auto-trade/runtime-mode`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode }),
+    })
+    if (!res.ok) throw new Error("Failed to set runtime mode")
+    return res.json()
+  }
+
+  async getRuntimeMode(): Promise<RuntimeModeResponse> {
+    const res = await fetch(`${this.base}/api/auto-trade/runtime-mode`)
+    if (!res.ok) throw new Error("Failed to fetch runtime mode")
     return res.json()
   }
 
