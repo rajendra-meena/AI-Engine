@@ -135,6 +135,10 @@ _engine_lock = asyncio.Lock()
 _last_workspace_snapshot: dict[str, Any] | None = None
 _health_watchdog_task: asyncio.Task | None = None
 
+# Engine session tracking for counter resets
+_engine_session_id: str = ""
+_counter_reset_at: str = ""
+
 # Subscribed events
 _event_subscriptions: list[str] = []
 
@@ -1068,6 +1072,17 @@ async def _try_execute_trade(
         return None
 
     _stage("TRY_EXECUTE_ENTERED", symbol=symbol, direction=result.get("direction",""), score=result.get("opportunity_score",0))
+
+    # ── EventBus safety gate ──
+    try:
+        if _event_bus:
+            safe, reason = _event_bus.can_execute_safely()
+            if not safe:
+                _scan_metrics["risk_blocked_total"] = _scan_metrics.get("risk_blocked_total", 0) + 1
+                return _fail("EXEC_BLOCK_EVENTBUS_UNSAFE", reason)
+    except Exception:
+        pass
+    _stage("EVENTBUS_SAFETY_PASSED")
 
     if not result or result.get("opportunity_score", 0) < 50:
         return _fail("EXEC_BLOCK_SCORE_BELOW_50", f"Score {result.get('opportunity_score',0)} < 50")
@@ -2066,6 +2081,21 @@ async def auto_trade_workspace():
     except Exception:
         result["premium_freshness"] = {"total_positions": 0, "live_count": 0, "stale_count": 0, "waiting_count": 0}
 
+    # ── Engine session info ──
+    result["engine_session"] = {
+        "session_id": _engine_session_id if _engine_running else "",
+        "counter_reset_at": _counter_reset_at if _engine_running else "",
+    }
+
+    # ── EventBus health ──
+    try:
+        if _event_bus:
+            result["eventbus_health"] = _event_bus.get_stats()
+        else:
+            result["eventbus_health"] = {"health_status": "NOT_STARTED"}
+    except Exception:
+        result["eventbus_health"] = {"health_status": "ERROR"}
+
     # ── Phase 2D: Premium data status per position ──
     try:
         if _paper_broker and result.get("open_positions"):
@@ -2613,9 +2643,11 @@ async def auto_trade_start():
     """Start the auto analysis engine with Zerodha Kite data.
 
     Initializes Zerodha-backed analysis and returns initialization progress.
+    Resets funnel counters and session ID on each start.
     Trade execution depends on runtime mode and all approval gates.
     """
     global _engine_running, _engine_state, _engine_task, _health_watchdog_task, _analysis_enabled
+    global _engine_session_id, _counter_reset_at
 
     async with _engine_lock:
         if _engine_running:
@@ -2628,6 +2660,26 @@ async def auto_trade_start():
                 "state": "BLOCKED",
                 "message": "ZerodhaMarketDataEngine not initialized. Cannot start Auto Trade.",
             }
+
+        # Reset funnel counters for new session
+        _engine_session_id = uuid.uuid4().hex[:12]
+        _counter_reset_at = datetime.now(timezone.utc).isoformat()
+        for _k in _scan_metrics:
+            if isinstance(_scan_metrics[_k], (int, float)):
+                _scan_metrics[_k] = 0
+        _scan_metrics["last_candle_closed_at"] = None
+        _scan_metrics["last_analysis_started_at"] = None
+        _scan_metrics["last_analysis_completed_at"] = None
+        _scan_metrics["last_successful_analysis_at"] = None
+        _scan_metrics["last_candidate"] = {}
+        _scan_metrics["last_trade_plan"] = {}
+        _scan_metrics["last_risk_result"] = {}
+        _scan_metrics["last_execution_result"] = {}
+        _scan_metrics["last_block_reason"] = None
+        _scan_metrics["last_block_stage"] = None
+        _scan_metrics["last_block_code"] = None
+        _scan_metrics["last_execution_trace"] = []
+        _scan_metrics["last_trade_plan_input"] = {}
 
         _analysis_enabled = True
         _engine_running = True
