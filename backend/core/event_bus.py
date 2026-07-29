@@ -26,6 +26,7 @@ Coalescible types (keep most recent per key):
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Coroutine
@@ -106,6 +107,10 @@ class EventBus:
         self._health_status: str = "HEALTHY"
         self._events_published_rate: float = 0.0
         self._events_processed_rate: float = 0.0
+        # Track when the most recent critical drop happened — used by safety gate
+        self._last_critical_drop_at: float = 0.0
+        # Safety gate: ignore drops older than this many seconds
+        self._critical_drop_cooldown_s: float = 15.0
 
     # ── Lifecycle ──
 
@@ -199,6 +204,7 @@ class EventBus:
             except asyncio.TimeoutError:
                 self._critical_dropped += 1
                 self._total_dropped += 1
+                self._last_critical_drop_at = time.time()
                 self._drop_counts[event.type] = self._drop_counts.get(event.type, 0) + 1
                 log_error("EventBus: CRITICAL event dropped after timeout",
                           type=event.type, id=event.id, queue_size=self._evt_queue.qsize())
@@ -334,16 +340,29 @@ class EventBus:
     def can_execute_safely(self) -> tuple[bool, str]:
         """
         Execution safety gate:
-        - CRITICAL health → block
-        - queue > 95% full → block
+        - Only blocks if critical events were dropped within the cooldown window
+        - Drops from more than _critical_drop_cooldown_s seconds ago are ignored
+        - queue > 95% full → block regardless
+
+        This prevents warmup drops from permanently blocking all execution.
         Returns (safe: bool, reason: str).
         """
-        if self._critical_dropped > 0:
-            return False, f"EVENTBUS_DATA_INTEGRITY_UNSAFE: {self._critical_dropped} critical events dropped"
+        # Check for recent critical drops (within cooldown window)
+        if self._critical_dropped > 0 and self._last_critical_drop_at > 0:
+            elapsed = time.time() - self._last_critical_drop_at
+            if elapsed < self._critical_drop_cooldown_s:
+                return False, (
+                    f"EVENTBUS_DATA_INTEGRITY_UNSAFE: "
+                    f"{self._critical_dropped} critical events dropped "
+                    f"{elapsed:.0f}s ago"
+                )
+
+        # Check queue utilization
         qsize = self._evt_queue.qsize()
         util_pct = (qsize / max(self._max_queue_size, 1)) * 100.0
         if util_pct > BLOCK_EXECUTION_UTIL_PCT:
             return False, f"EVENTBUS_QUEUE_OVERLOAD: {util_pct:.0f}% utilization"
+
         return True, ""
 
     def get_health_status(self) -> str:
@@ -361,6 +380,7 @@ class EventBus:
         self._total_coalesced = 0
         self._total_processing_time_ns = 0
         self._health_status = "HEALTHY"
+        self._last_critical_drop_at = 0.0
 
     def get_stats(self) -> dict[str, Any]:
         """Return internal bus statistics."""
