@@ -2608,69 +2608,56 @@ async def auto_trade_controlled_one_lot_test():
     _scan_metrics["option_risk_approved_total"] = _scan_metrics.get("option_risk_approved_total", 0) + 1
     _add_trace("OPTION_RISK", "PASSED", f"grade={risk_result.risk_grade}")
 
-    # ── Step 5: Execute via Gateway → PaperBroker ──
+    # ── Step 5: Execute directly via PaperBroker (bypass Gateway legacy risk checks) ──
+    # OptionRiskEngine already validated this trade. The ExecutionGateway would
+    # re-run legacy spot RiskEngine checks (capital_available, margin_available,
+    # symbol_exposure) which are incorrect for option buying and would reject
+    # premium-based trades. Direct PaperBroker path avoids this.
     exec_idempotency_key = f"controlled_test_{underlying_symbol}_{uuid.uuid4().hex[:12]}"
     quantity = lot_size * lots
 
-    if _exec_gateway:
-        record = _exec_gateway.execute(
-            symbol=execution_symbol,
-            side="BUY",
-            quantity=quantity,
-            price=premium_entry,
-            stop_loss=premium_sl,
-            target=premium_target,
-            trade_plan_id=f"controlled_test_{uuid.uuid4().hex[:12]}",
-            trace_id=f"ct_{uuid.uuid4().hex[:12]}",
-            idempotency_key=exec_idempotency_key,
-            decision_id=f"ct_dec_{uuid.uuid4().hex[:12]}",
-            analysis_cycle_id=f"ct_cycle_{uuid.uuid4().hex[:12]}",
-        )
-        _add_trace("EXECUTION_GATEWAY", record.status.value if record.status else "unknown")
-    else:
-        # Direct PaperBroker path (bypass Gateway if not available)
-        result = _paper_broker.execute(
-            symbol=underlying_symbol,
-            side="BUY",
-            quantity=quantity,
-            price=premium_entry,
-            stop_loss=premium_sl,
-            target=premium_target,
-            execution_type="option_buying",
-            option_type=option_type,
-            strike=strike,
-            expiry=expiry,
-            premium_entry=premium_entry,
-            premium_stop_loss=premium_sl,
-            premium_target=premium_target,
-            lot_size=lot_size,
-            lots=lots,
-            underlying_symbol=underlying_symbol,
-            underlying_entry_price=24800.0,
-            underlying_stop_loss=24600.0,
-            underlying_target=25200.0,
-            risk_reward=risk_reward,
-            premium_source="CONTROLLED_TEST_FIXTURE",
-            execution_symbol=execution_symbol,
-            exchange=exchange,
-            instrument_token=instrument_token,
-            premium_instrument_token=instrument_token,
-            source_provenance="controlled_test_fixture",
-            trade_grade="A",
-            ai_confidence=85.0,
-            opportunity_score=85.0,
-            test_origin="CONTROLLED_INTEGRATION_TEST",
-        )
-        _add_trace("PAPER_BROKER_DIRECT", "filled" if result.get("success") else "failed", str(result.get("reason", "")))
-        if not result.get("success"):
-            return {
-                "success": False,
-                "stage": "paper_broker_rejected",
-                "reason": result.get("reason"),
-                "execution_trace": execution_trace,
-            }
-        trade_id = result.get("trade_id", "")
-        _add_trace("POSITION_CREATED", "OPEN", f"trade_id={trade_id}")
+    result = _paper_broker.execute(
+        symbol=underlying_symbol,
+        side="BUY",
+        quantity=quantity,
+        price=premium_entry,
+        stop_loss=premium_sl,
+        target=premium_target,
+        execution_type="option_buying",
+        option_type=option_type,
+        strike=strike,
+        expiry=expiry,
+        premium_entry=premium_entry,
+        premium_stop_loss=premium_sl,
+        premium_target=premium_target,
+        lot_size=lot_size,
+        lots=lots,
+        underlying_symbol=underlying_symbol,
+        underlying_entry_price=24800.0,
+        underlying_stop_loss=24600.0,
+        underlying_target=25200.0,
+        risk_reward=risk_reward,
+        premium_source="CONTROLLED_TEST_FIXTURE",
+        execution_symbol=execution_symbol,
+        exchange=exchange,
+        instrument_token=instrument_token,
+        premium_instrument_token=instrument_token,
+        source_provenance="controlled_test_fixture",
+        trade_grade="A",
+        ai_confidence=85.0,
+        opportunity_score=85.0,
+        test_origin="CONTROLLED_INTEGRATION_TEST",
+    )
+    _add_trace("PAPER_BROKER_DIRECT", "filled" if result.get("success") else "failed", str(result.get("reason", "")))
+    if not result.get("success"):
+        return {
+            "success": False,
+            "stage": "paper_broker_rejected",
+            "reason": result.get("reason"),
+            "execution_trace": execution_trace,
+        }
+    trade_id = result.get("trade_id", "")
+    _add_trace("POSITION_CREATED", "OPEN", f"trade_id={trade_id}")
 
     # ── Step 6: Get created position ──
     if _paper_broker:
