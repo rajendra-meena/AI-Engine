@@ -162,3 +162,12 @@ async def auto_trade_patch_settings(payload: dict):
     if not result.get("success"):
         raise HTTPException(status_code=422, detail=result.get("errors", ["Invalid settings"]))
     return result
+
+
+@router.post("/api/auto-trade/settings/reset-paper-defaults")
+async def auto_trade_reset_paper_defaults():
+    """Reset settings to safe paper-trading defaults and return the full profile."""
+    reset_settings()
+    s = get_settings()
+    log_info("AutoTrade: settings reset to paper defaults")
+    return {"success": True, **s.to_dict()}

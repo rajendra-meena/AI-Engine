@@ -352,6 +352,14 @@ class AutoTradeService {
     return res.json()
   }
 
+  async resetSettingsToPaperDefaults(): Promise<AutoTradeSettings> {
+    const res = await fetch(`${this.base}/api/auto-trade/settings/reset-paper-defaults`, {
+      method: "POST",
+    })
+    if (!res.ok) throw new Error("Failed to reset settings")
+    return res.json()
+  }
+
   async closePaperPosition(tradeId: string): Promise<any> {
     const res = await fetch(`${this.base}/api/auto-trade/paper-positions/${tradeId}/close`, {
       method: "POST",

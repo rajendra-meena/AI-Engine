@@ -5,6 +5,8 @@ Phase 39: only OBSERVE and SHADOW allowed.
 
 from __future__ import annotations
 
+import os
+from datetime import datetime, timezone
 from enum import Enum
 
 
@@ -22,10 +24,42 @@ CONTROLLED_LIVE_ENABLED = False  # Set True during authorized controlled live se
 
 
 class RuntimeModeManager:
-    """Manages runtime mode with strict safety enforcement."""
+    """Manages runtime mode with strict safety enforcement.
+    Default mode is PAPER for zero-config paper trading.
+    Mode persists in a file so restart returns to the last safe mode.
+    """
 
-    def __init__(self):
-        self._mode = RuntimeMode.OBSERVE
+    def __init__(self, persist_path: str = ""):
+        self._mode = RuntimeMode.PAPER
+        self._persist_path = persist_path or os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "data_cache",
+            "runtime_mode.json",
+        )
+        self._load()
+        self._controlled_live_active = False
+
+    def _load(self):
+        """Load persisted mode if available."""
+        try:
+            if os.path.exists(self._persist_path):
+                import json
+                with open(self._persist_path) as f:
+                    data = json.load(f)
+                    mode_str = data.get("mode", "paper")
+                    self._mode = RuntimeMode(mode_str)
+        except Exception:
+            self._mode = RuntimeMode.PAPER
+
+    def _save(self):
+        """Persist current mode."""
+        try:
+            import json
+            os.makedirs(os.path.dirname(self._persist_path), exist_ok=True)
+            with open(self._persist_path, "w") as f:
+                json.dump({"mode": self._mode.value, "updated_at": datetime.now(timezone.utc).isoformat()}, f)
+        except Exception:
+            pass
         self._phase_39_lock = True  # Hard lock for Phase 39
         self._controlled_live_active = False
 
@@ -46,6 +80,7 @@ class RuntimeModeManager:
             return {"success": False, "message": f"Mode '{mode}' is disabled in this phase"}
 
         self._mode = new_mode
+        self._save()
         return {"success": True, "mode": self._mode.value}
 
     def activate_controlled_live(self) -> dict:
@@ -83,12 +118,20 @@ class RuntimeModeManager:
     def can_execute_paper(self) -> bool:
         return self._mode == RuntimeMode.PAPER
 
+    def reset_to_paper_default(self) -> dict:
+        """Reset to paper trading default mode."""
+        self._mode = RuntimeMode.PAPER
+        self._controlled_live_active = False
+        self._save()
+        return {"success": True, "mode": self._mode.value}
+
     def get_status(self) -> dict:
         return {
             "mode": self._mode.value,
             "observe": self.is_observe(),
             "shadow": self.is_shadow(),
             "paper_enabled": self.is_paper(),
+            "paper": self.is_paper(),
             "live_enabled": False,
             "controlled_live_active": self._controlled_live_active,
             "phase_39_lock": self._phase_39_lock,

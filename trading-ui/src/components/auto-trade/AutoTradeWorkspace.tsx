@@ -545,6 +545,19 @@ export function AutoTradeWorkspace() {
 
             {/* USER SETTINGS — all controls call PATCH /api/auto-trade/settings */}
             <SectionCard title="User Settings" icon={<Gauge className="w-3.5 h-3.5 text-primary" />} defaultOpen={false}>
+              {/* Paper Trading Defaults indicator */}
+              <div className="rounded border border-emerald-500/20 bg-emerald-500/5 px-2 py-1 mb-2 text-[9px] text-emerald-600 flex items-center justify-between">
+                <span className="flex items-center gap-1"><CheckCircle className="w-2.5 h-2.5" /> Paper Trading Defaults Active</span>
+                <button onClick={async () => {
+                  if (!ats) return;
+                  try {
+                    const res = await autoTradeService.resetSettingsToPaperDefaults();
+                    if (res) setAts(res);
+                  } catch {
+                    setError("Failed to reset settings");
+                  }
+                }} className="text-[8px] text-muted-foreground hover:text-foreground underline">Reset</button>
+              </div>
               <div className="space-y-2">
                 {[
                   { label: "Execution Type", key: "execution_type", kind: "select", opts: ["option_buying","synthetic_spot"] },

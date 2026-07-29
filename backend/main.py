@@ -15,6 +15,7 @@ Phase 4 architecture:
 
 from contextlib import asynccontextmanager
 import asyncio
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 from pathlib import Path
 
@@ -97,7 +98,7 @@ from replay.engine import ReplayEngine
 from core.event_bus import EventBus
 from core.symbols import list_canonical_names
 from core import service_locator
-from utils.logger import log_info, log_warn
+from utils.logger import log_info, log_warn, log_error
 
 # Options Engine (Phase 57)
 from options.config import OptionEngineConfig
@@ -340,7 +341,7 @@ async def lifespan(app: FastAPI):
 
     # Restore open positions from persisted state
     try:
-        open_positions = get_open_positions()
+        open_positions = _ptdb.get_open_positions()
         if open_positions:
             recovery_diag = paper_broker.restore_positions(open_positions)
             paper_broker._recovery_diagnostics = recovery_diag
