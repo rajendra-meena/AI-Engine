@@ -1333,43 +1333,59 @@ class TestPaperExecutionPathCorrection:
         """_try_execute_trade must block same-direction duplicate positions."""
         import asyncio
         from api.auto_trade import _try_execute_trade, set_auto_trade_paper_broker
+        from api.auto_trade_settings import get_settings, update_settings
         from execution.paper_broker import PaperBroker
 
         broker = PaperBroker()
         broker.start()
         set_auto_trade_paper_broker(broker)
 
-        # Open a BUY position
-        broker.execute(symbol="TEST", side="BUY", quantity=10, price=100.0)
+        # Enable auto-execute so the gate doesn't block before position check
+        original = get_settings().auto_execute_paper_trades
+        try:
+            update_settings({"auto_execute_paper_trades": True})
 
-        result = {"opportunity_score": 70, "direction": "BUY", "reject_reasons": []}
-        ai_snap = {"market_snapshot": {"close": 105.0}, "score": 70, "confidence": 80, "decision_id": "d1", "trace_id": "t1"}
+            # Open a BUY position
+            broker.execute(symbol="TEST", side="BUY", quantity=10, price=100.0)
 
-        out = asyncio.run(_try_execute_trade("TEST", result, ai_snap, None))
-        assert out is not None
-        assert out.get("status") == "blocked"
-        assert "already open" in out.get("reason", "").lower()
+            result = {"opportunity_score": 70, "direction": "BUY", "reject_reasons": []}
+            ai_snap = {"market_snapshot": {"close": 105.0}, "score": 70, "confidence": 80, "decision_id": "d1", "trace_id": "t1"}
+
+            out = asyncio.run(_try_execute_trade("TEST", result, ai_snap, None))
+            assert out is not None
+            assert out.get("status") == "blocked"
+            assert "already open" in out.get("reason", "").lower()
+        finally:
+            update_settings({"auto_execute_paper_trades": original})
 
     def test_position_gate_opposite_direction_blocked(self):
         """_try_execute_trade must block opposite-direction when position active."""
         import asyncio
         from api.auto_trade import _try_execute_trade, set_auto_trade_paper_broker
+        from api.auto_trade_settings import get_settings, update_settings
         from execution.paper_broker import PaperBroker
 
         broker = PaperBroker()
         broker.start()
         set_auto_trade_paper_broker(broker)
 
-        # Open a BUY position
-        broker.execute(symbol="TEST", side="BUY", quantity=10, price=100.0)
+        # Enable auto-execute so the gate doesn't block before position check
+        original = get_settings().auto_execute_paper_trades
+        try:
+            update_settings({"auto_execute_paper_trades": True})
 
-        result = {"opportunity_score": 70, "direction": "SELL", "reject_reasons": []}
-        ai_snap = {"market_snapshot": {"close": 105.0}, "score": 70, "confidence": 80, "decision_id": "d1", "trace_id": "t1"}
+            # Open a BUY position
+            broker.execute(symbol="TEST", side="BUY", quantity=10, price=100.0)
 
-        out = asyncio.run(_try_execute_trade("TEST", result, ai_snap, None))
-        assert out is not None
-        assert out.get("status") == "blocked"
-        assert "opposite" in out.get("reason", "").lower()
+            result = {"opportunity_score": 70, "direction": "SELL", "reject_reasons": []}
+            ai_snap = {"market_snapshot": {"close": 105.0}, "score": 70, "confidence": 80, "decision_id": "d1", "trace_id": "t1"}
+
+            out = asyncio.run(_try_execute_trade("TEST", result, ai_snap, None))
+            assert out is not None
+            assert out.get("status") == "blocked"
+            assert "opposite" in out.get("reason", "").lower()
+        finally:
+            update_settings({"auto_execute_paper_trades": original})
 
     def test_idempotency_prevents_duplicate_execution(self):
         """Same analysis_cycle_id must not produce duplicate trades."""

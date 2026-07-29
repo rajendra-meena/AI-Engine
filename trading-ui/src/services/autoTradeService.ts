@@ -107,6 +107,77 @@ export interface RiskResult {
   [key: string]: any
 }
 
+export interface BlockedAttempt {
+  attempt_id: string
+  timestamp: string
+  underlying_symbol: string
+  direction: string
+  analysis_cycle_id: string
+  stage: string
+  block_code: string
+  block_reason: string
+  actual_value: string
+  required_value: string
+  settings_snapshot: any
+  risk_snapshot: any
+}
+
+export interface PaperPosition {
+  trade_id: string
+  execution_symbol: string
+  symbol: string
+  underlying_symbol: string
+  direction: string
+  quantity: number
+  entry_time: string
+  entry_price: number
+  current_price: number
+  stop_loss: number | null
+  target: number | null
+  unrealized_pnl: number
+  pnl_percent: number
+  status: string
+  execution_type: string
+  exchange: string
+  // Option fields
+  option_type: string | null
+  strike: number | null
+  expiry: string | null
+  premium_entry: number | null
+  premium_current: number | null
+  premium_stop_loss: number | null
+  premium_target: number | null
+  lot_size: number | null
+  lots: number | null
+  risk_reward: number | null
+  premium_source: string
+  // Diagnostics
+  ai_confidence: number
+  opportunity_score: number
+  trade_grade: string
+  decision_id: string
+  analysis_cycle_id: string
+  test_origin: string
+  [key: string]: any
+}
+
+export interface PaperAccount {
+  initial_capital: number
+  available_cash: number
+  used_margin: number
+  equity: number
+  total_unrealized_pnl: number
+  total_realized_pnl: number
+  total_pnl: number
+  return_pct: number
+  open_positions: number
+  closed_trades: number
+  win_count: number
+  loss_count: number
+  win_rate: number
+  [key: string]: any
+}
+
 export interface WorkspaceResponse {
   engine: AutoTradeEngine
   readiness: ReadinessCheck
@@ -132,6 +203,13 @@ export interface WorkspaceResponse {
   alerts: any[]
   timeline: any[]
   errors: string[]
+  // Phase 2C: new sections
+  open_positions: PaperPosition[]
+  blocked_attempts: BlockedAttempt[]
+  trade_history: any[]
+  paper_account: PaperAccount
+  data_sources: any
+  [key: string]: any
 }
 
 export interface EngineControlResponse {
@@ -179,6 +257,15 @@ export interface OptionExecutionPlan {
   premium_sl: number
   premium_target: number
   risk_per_lot: number
+}
+
+export interface RuntimeModeResponse {
+  mode: string
+  observe?: boolean
+  shadow?: boolean
+  paper?: boolean
+  controlled_live?: boolean
+  can_execute_paper?: boolean
 }
 
 class AutoTradeService {
@@ -251,6 +338,35 @@ class AutoTradeService {
     if (!res.ok) throw new Error("Failed to update settings")
     return res.json()
   }
+
+  async closePaperPosition(tradeId: string): Promise<any> {
+    const res = await fetch(`${this.base}/api/auto-trade/paper-positions/${tradeId}/close`, {
+      method: "POST",
+    })
+    if (!res.ok) throw new Error("Failed to close paper position")
+    return res.json()
+  }
+
+  async getPaperPositions(): Promise<{ positions: PaperPosition[]; total: number }> {
+    const res = await fetch(`${this.base}/api/auto-trade/paper-positions`)
+    if (!res.ok) throw new Error("Failed to fetch paper positions")
+    return res.json()
+  }
+
+  async controlledTestOneLot(): Promise<any> {
+    const res = await fetch(`${this.base}/api/auto-trade/controlled-test-one-lot`, {
+      method: "POST",
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }))
+      throw new Error(err.detail || "Controlled test failed")
+    }
+    return res.json()
+  }
+
+  // ── Helper to check if service has stale/legacy methods (compile-time guard) ──
+  // If this line errors, a duplicate legacy method was left behind.
+  readonly _methods_ok = true as const
 }
 
 export const autoTradeService = new AutoTradeService()

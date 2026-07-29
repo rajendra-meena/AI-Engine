@@ -857,8 +857,9 @@ class TestExecutionGatewaySafety:
         mgr = RuntimeModeManager()
         result = mgr.set_mode("live")
         assert not result["success"]
+        # PAPER is now allowed in Phase 2C
         result = mgr.set_mode("paper")
-        assert not result["success"]
+        assert result["success"]
 
     def test_gateway_mode_cannot_enable_live(self):
         from execution.gateway import ExecutionGateway

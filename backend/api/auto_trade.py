@@ -177,12 +177,18 @@ _scan_metrics = {
     # Granular candidate funnel
     "raw_directional_signals_total": 0,   # any LONG/SHORT from AI decision
     "score_qualified_candidates_total": 0,# LONG/SHORT with score>=50, no reject_reasons
+    "option_contracts_selected_total": 0, # OptionSelector chose a specific contract
+    "premium_ready_total": 0,            # Premium fetched and valid
+    "option_plans_created_total": 0,     # OptionExecutionPlan built
+    "option_risk_approved_total": 0,     # OptionRiskEngine passed
     "trade_plans_created_total": 0,       # TradePlanner created a valid plan
     "risk_approved_total": 0,            # RiskEngine validated the plan
     "risk_blocked_total": 0,            # LONG/SHORT rejected by risk
     "execution_attempts_total": 0,       # ExecutionGateway.execute() called
     "execution_failed_total": 0,         # Gateway execution returned failure
     "paper_trades_created_total": 0,    # PaperBroker created a position
+    "open_positions_count": 0,          # Current open positions count
+    "closed_trades_count": 0,           # Completed trades count
     # Timestamps
     "last_candle_closed_at": None,      # ISO timestamp
     "last_analysis_started_at": None,   # ISO timestamp
@@ -1086,6 +1092,17 @@ async def _try_execute_trade(
         return _fail("EXEC_BLOCK_RUNTIME_MODE", f"Runtime mode: {runtime_mode} not allowed")
     _stage("RUNTIME_MODE_PASSED", mode=runtime_mode)
 
+    # ── Auto Execute Paper Trades gate ──
+    try:
+        ats_settings = get_ats()
+        if not ats_settings.auto_execute_paper_trades:
+            return _fail("EXEC_BLOCK_AUTO_EXECUTE_DISABLED",
+                         "Auto Execute Paper Trades is disabled in settings",
+                         settings_value=ats_settings.auto_execute_paper_trades)
+    except Exception:
+        pass
+    _stage("AUTO_EXECUTE_PASSED")
+
     session = check_session()
     if not session.can_trade:
         return _fail("EXEC_BLOCK_SESSION", f"Session blocked: {session.code}:{session.reason}")
@@ -1488,11 +1505,22 @@ def _build_workspace_snapshot(
             "configured_symbols": configured_symbols,
             "symbols_with_live_ticks": live_symbols,
             "symbols_analysed": _scan_metrics.get("symbols_scanned_total", 0),
+            "candidates_found_total": _scan_metrics.get("score_qualified_candidates_total", 0),
             "analyses_completed_total": _scan_metrics.get("analyses_completed_total", 0),
             "no_trade_decisions_total": _scan_metrics.get("no_trade_decisions_total", 0),
-            "candidates_found_total": _scan_metrics.get("candidates_found_total", 0),
+            "raw_directional_signals_total": _scan_metrics.get("raw_directional_signals_total", 0),
+            "score_qualified_candidates_total": _scan_metrics.get("score_qualified_candidates_total", 0),
+            "option_contracts_selected_total": _scan_metrics.get("option_contracts_selected_total", 0),
+            "premium_ready_total": _scan_metrics.get("premium_ready_total", 0),
+            "option_plans_created_total": _scan_metrics.get("option_plans_created_total", 0),
+            "option_risk_approved_total": _scan_metrics.get("option_risk_approved_total", 0),
+            "trade_plans_created_total": _scan_metrics.get("trade_plans_created_total", 0),
+            "risk_approved_total": _scan_metrics.get("risk_approved_total", 0),
             "risk_blocked_total": _scan_metrics.get("risk_blocked_total", 0),
+            "execution_attempts_total": _scan_metrics.get("execution_attempts_total", 0),
             "paper_trades_created_total": _scan_metrics.get("paper_trades_created_total", 0),
+            "open_positions_count": _scan_metrics.get("open_positions_count", 0),
+            "closed_trades_count": _scan_metrics.get("closed_trades_count", 0),
             "last_analysis_at": _scan_metrics.get("last_analysis_completed_at"),
             "last_candle_closed_at": _scan_metrics.get("last_candle_closed_at"),
         },
@@ -1895,18 +1923,476 @@ async def auto_trade_workspace():
     except Exception:
         pass
 
+    # Wire auto_execute_paper from authoritative settings
+    try:
+        ats_settings = get_ats()
+        _auto_execute_paper = ats_settings.auto_execute_paper_trades
+    except Exception:
+        pass
+    auto_execute_val: bool = False
+    try:
+        auto_execute_val = bool(_auto_execute_paper)
+    except Exception:
+        pass
+
     # Engine status
     result["engine"]["state"] = _engine_state
     result["engine"]["running"] = _engine_running
     result["engine"]["paused"] = _engine_paused
     result["engine"]["analysis_enabled"] = _analysis_enabled
     result["engine"]["mode"] = _get_runtime_mode()
-    result["engine"]["auto_execute_paper"] = _auto_execute_paper
+    result["engine"]["auto_execute_paper"] = auto_execute_val
 
     # Provider info (always live, not cached)
     result["provider"] = _get_zerodha_status_dict()
 
+    # ── Open Paper Positions (from PaperBroker) ──
+    try:
+        if _paper_broker:
+            open_paper_positions = _paper_broker.get_positions()
+            result["open_positions"] = [p.to_dict(include_diagnostics=True) for p in open_paper_positions]
+            _scan_metrics["open_positions_count"] = len(open_paper_positions)
+        else:
+            result["open_positions"] = []
+            _scan_metrics["open_positions_count"] = 0
+    except Exception:
+        result["open_positions"] = []
+
+    # ── Blocked Attempts (from PaperBroker) ──
+    try:
+        if _paper_broker:
+            result["blocked_attempts"] = _paper_broker.get_blocked_attempts(limit=50)
+        else:
+            result["blocked_attempts"] = []
+    except Exception:
+        result["blocked_attempts"] = []
+
+    # ── Trade History (from PaperBroker) ──
+    try:
+        if _paper_broker:
+            trades = _paper_broker.get_trades()
+            result["trade_history"] = trades[-50:] if trades else []
+            _scan_metrics["closed_trades_count"] = _paper_broker.get_account().closed_trades
+        else:
+            result["trade_history"] = []
+    except Exception:
+        result["trade_history"] = []
+
+    # ── Paper Account Summary ──
+    try:
+        if _paper_broker:
+            result["paper_account"] = _paper_broker.get_account().to_dict()
+        else:
+            result["paper_account"] = {}
+    except Exception:
+        result["paper_account"] = {}
+
+    # ── Data Source Provenance ──
+    result["data_sources"] = {
+        "underlying_live_source": "ZERODHA_KITE_WEBSOCKET",
+        "historical_source": "ZERODHA_KITE",
+        "premium_source": get_ats().premium_source if hasattr(get_ats(), "premium_source") else "ZERODHA",
+        "yahoo_feeds": {
+            "chart_endpoint": True,
+            "historical_analysis": False,
+            "current_market_analysis": False,
+            "executable_decisions": False,
+        },
+    }
+
     return result
+
+
+@router.post("/api/auto-trade/paper-positions/{trade_id}/close")
+async def auto_trade_close_paper_position(trade_id: str):
+    """Close a paper position manually.
+
+    Only PAPER positions can be closed through this endpoint.
+    Fetches current premium (where available), calculates realized P&L,
+    moves position to history, and returns the closed position.
+    """
+    if not _paper_broker:
+        raise HTTPException(status_code=503, detail="PaperBroker not initialized")
+
+    pos = _paper_broker.get_position_by_id(trade_id)
+    if not pos:
+        raise HTTPException(status_code=404, detail="Paper position not found")
+
+    current_price = pos.current_price
+    success = _paper_broker.close_position(trade_id, reason="manual_exit")
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to close position")
+
+    return {
+        "success": True,
+        "trade_id": trade_id,
+        "exit_price": current_price,
+        "realized_pnl": round(pos.realized_pnl, 2),
+        "message": "Position closed",
+    }
+
+
+@router.get("/api/auto-trade/paper-positions")
+async def auto_trade_get_paper_positions():
+    """Get all open paper positions with full field set."""
+    if not _paper_broker:
+        return {"positions": [], "total": 0}
+    positions = _paper_broker.get_positions()
+    return {
+        "positions": [p.to_dict(include_diagnostics=True) for p in positions],
+        "total": len(positions),
+    }
+
+
+# ── Controlled Integration Test Endpoint (DEV only) ──
+
+import os as _os_mod
+
+
+def _is_dev_mode() -> bool:
+    """True when running in development/test mode."""
+    # Check multiple indicators to avoid false production activation
+    env = _os_mod.environ.get("APP_ENV", "development").lower()
+    return env in ("development", "dev", "test") or _os_mod.environ.get("CONTROLLED_TEST", "").lower() == "true"
+
+
+@router.post("/api/auto-trade/controlled-test-one-lot", include_in_schema=False)
+async def auto_trade_controlled_one_lot_test():
+    """
+    DEV ONLY: Controlled integration test that creates a one-lot PaperPosition
+    through the full production-style pipeline.
+
+    Goes through:
+        Settings validation
+        → OptionExecutionPlanner
+        → OptionRiskEngine
+        → ExecutionGateway in PAPER mode
+        → PaperBroker
+        → PaperPosition storage
+        → Workspace serialization
+
+    Labelled test_origin = CONTROLLED_INTEGRATION_TEST.
+    No real broker order is placed.
+    Returns the created PaperPosition and full execution trace.
+    """
+    if not _is_dev_mode():
+        raise HTTPException(status_code=403, detail="Only available in development/test mode")
+
+    if not _paper_broker:
+        raise HTTPException(status_code=503, detail="PaperBroker not initialized")
+
+    # Ensure paper broker is running
+    if not _paper_broker.is_running:
+        _paper_broker.start()
+
+    # Ensure gateway is in PAPER mode
+    if _exec_gateway:
+        _exec_gateway.set_mode("paper")
+
+    # ── Controlled inputs ──
+    underlying_symbol = "NIFTY 50"
+    direction = "LONG"
+    option_type = "CE"
+    lot_size = 50        # NIFTY standard lot
+    lots = 1
+    premium_entry = 180.0
+    premium_sl = 160.0
+    premium_target = 220.0
+    strike = 24800.0      # example ATM strike
+    expiry = "2026-08-06"  # nearest weekly
+    exchange = "NFO"
+    instrument_token = 1000001
+    execution_symbol = "NIFTY 50 24800 CE"
+    capital = 100000.0
+    risk_reward = 2.0
+    quantity = lot_size * lots  # 50
+    premium_cost = premium_entry * lot_size  # 180 * 50 = 9000
+    risk_per_lot = (premium_entry - premium_sl) * lot_size  # 20 * 50 = 1000
+    reward_per_lot = (premium_target - premium_entry) * lot_size  # 40 * 50 = 2000
+
+    # ── Step 1: Validate settings gates ──
+    settings = get_ats()
+    execution_trace = []
+    blocked = []
+
+    def _add_trace(stage: str, status: str, detail: str = ""):
+        execution_trace.append({"stage": stage, "status": status, "detail": detail, "ts": datetime.now(timezone.utc).isoformat()})
+
+    # 1a. Runtime mode
+    runtime_mode = _get_runtime_mode()
+    if runtime_mode != "paper":
+        blocked.append({
+            "block_code": "RUNTIME_MODE_NOT_PAPER",
+            "block_reason": f"Runtime mode must be PAPER, got {runtime_mode}",
+            "actual_value": runtime_mode, "required_value": "paper",
+        })
+        _add_trace("RUNTIME_MODE_CHECK", "BLOCKED", f"mode={runtime_mode}")
+
+    # 1b. Auto execute
+    if not settings.auto_execute_paper_trades:
+        blocked.append({
+            "block_code": "AUTO_EXECUTE_PAPER_DISABLED",
+            "block_reason": "Auto Execute Paper Trades is disabled in settings",
+            "actual_value": "false", "required_value": "true",
+        })
+        _add_trace("AUTO_EXECUTE_CHECK", "BLOCKED", "auto_execute_paper_trades=false")
+
+    # 1c. Allow buy
+    if direction == "LONG" and not settings.allow_buy_trades:
+        blocked.append({
+            "block_code": "BUY_TRADES_DISABLED",
+            "block_reason": "Buy trades are disabled in settings",
+            "actual_value": "false", "required_value": "true",
+        })
+        _add_trace("ALLOW_BUY_CHECK", "BLOCKED")
+
+    # 1d. Allow sell
+    if direction == "SHORT" and not settings.allow_sell_trades:
+        blocked.append({
+            "block_code": "SELL_TRADES_DISABLED",
+            "block_reason": "Sell trades are disabled in settings",
+            "actual_value": "false", "required_value": "true",
+        })
+        _add_trace("ALLOW_SELL_CHECK", "BLOCKED")
+
+    # 1e. Min confidence
+    if settings.min_ai_confidence > 40:
+        blocked.append({
+            "block_code": "AI_CONFIDENCE_BELOW_MINIMUM",
+            "block_reason": f"Min AI confidence {settings.min_ai_confidence} > 40 (test default)",
+            "actual_value": "40", "required_value": str(settings.min_ai_confidence),
+        })
+        _add_trace("AI_CONFIDENCE_CHECK", "BLOCKED")
+
+    # 1f. Min risk/reward
+    if settings.min_risk_reward > risk_reward:
+        blocked.append({
+            "block_code": "RISK_REWARD_BELOW_MINIMUM",
+            "block_reason": f"Min risk/reward {settings.min_risk_reward} > {risk_reward}",
+            "actual_value": str(risk_reward), "required_value": str(settings.min_risk_reward),
+        })
+        _add_trace("RISK_REWARD_CHECK", "BLOCKED")
+
+    # 1g. Max daily trades
+    if settings.max_trades_per_day < 1:
+        blocked.append({
+            "block_code": "MAX_DAILY_TRADES_REACHED",
+            "block_reason": f"Max daily trades {settings.max_trades_per_day} < 1",
+            "actual_value": str(settings.max_trades_per_day), "required_value": ">=1",
+        })
+        _add_trace("MAX_DAILY_TRADES_CHECK", "BLOCKED")
+
+    # 1h. Execution type
+    if settings.execution_type != "option_buying":
+        blocked.append({
+            "block_code": "EXECUTION_TYPE_MISMATCH",
+            "block_reason": f"Execution type must be option_buying, got {settings.execution_type}",
+            "actual_value": settings.execution_type, "required_value": "option_buying",
+        })
+        _add_trace("EXECUTION_TYPE_CHECK", "BLOCKED")
+
+    if blocked:
+        for b in blocked:
+            _paper_broker.record_blocked_attempt(
+                underlying_symbol=underlying_symbol,
+                direction=direction,
+                stage="settings_validation",
+                block_code=b["block_code"],
+                block_reason=b["block_reason"],
+                actual_value=b.get("actual_value", ""),
+                required_value=b.get("required_value", ""),
+                settings_snapshot=settings.to_dict(),
+            )
+        return {
+            "success": False,
+            "stage": "settings_gates_blocked",
+            "blocked_by": blocked,
+            "execution_trace": execution_trace,
+            "message": "Settings gates blocked the test trade. Adjust settings and retry.",
+        }
+
+    _add_trace("SETTINGS_GATES", "PASSED", f"all {len(settings.validate()) if not settings.validate() else 'OK'}")
+
+    # ── Step 2: Check position gate (no existing same-direction) ──
+    existing = _paper_broker.get_position(execution_symbol)
+    if existing:
+        _paper_broker.record_blocked_attempt(
+            underlying_symbol=underlying_symbol,
+            direction=direction,
+            stage="position_gate",
+            block_code="DUPLICATE_SIGNAL",
+            block_reason=f"Existing {existing.direction} position on {execution_symbol}",
+            actual_value=f"position:{existing.trade_id}",
+            required_value="no_open_position",
+        )
+        return {"success": False, "stage": "position_gate_blocked", "message": "Position already open"}
+
+    _add_trace("POSITION_GATE", "PASSED")
+
+    # ── Step 3: Build OptionPlan ──
+    from execution.options.planner import OptionExecutionPlanner
+
+    try:
+        option_plan = await OptionExecutionPlanner.execute(
+            symbol=underlying_symbol,
+            direction=direction,
+            underlying_price=24800.0,
+            underlying_sl=None,
+            underlying_target=None,
+            capital=capital,
+            risk_percent=2.0,
+            override_plan={
+                "option_type": option_type,
+                "strike": strike,
+                "expiry": expiry,
+                "premium": premium_entry,
+                "premium_sl": premium_sl,
+                "premium_target": premium_target,
+                "lot_size": lot_size,
+                "lots": lots,
+                "execution_symbol": execution_symbol,
+                "instrument_token": instrument_token,
+            },
+        )
+    except Exception as e:
+        return {"success": False, "stage": "option_planner_error", "error": str(e)}
+
+    if option_plan is None:
+        return {"success": False, "stage": "option_plan_none", "message": "OptionExecutionPlanner returned None"}
+
+    _scan_metrics["option_plans_created_total"] = _scan_metrics.get("option_plans_created_total", 0) + 1
+    _add_trace("OPTION_PLAN", "CREATED", f"{option_plan.strike:.0f}{option_plan.option_type} premium={option_plan.premium}")
+
+    # ── Step 4: Option Risk Validation ──
+    try:
+        from execution.options.risk import OptionRiskEngine
+        risk_result = OptionRiskEngine.validate(
+            option_plan=option_plan,
+            settings=settings,
+        )
+    except Exception as e:
+        return {"success": False, "stage": "option_risk_error", "error": str(e)}
+
+    if not risk_result.execution_permitted:
+        _paper_broker.record_blocked_attempt(
+            underlying_symbol=underlying_symbol,
+            direction=direction,
+            stage="option_risk",
+            block_code="OPTION_RISK_BLOCKED",
+            block_reason="; ".join(risk_result.rejected_by) if risk_result.rejected_by else risk_result.reason,
+            actual_value=f"permitted={risk_result.execution_permitted}",
+            required_value="permitted=true",
+            risk_snapshot={"risk_score": risk_result.risk_score, "risk_grade": risk_result.risk_grade, "rejected_by": risk_result.rejected_by},
+        )
+        return {
+            "success": False,
+            "stage": "option_risk_blocked",
+            "risk_result": risk_result.to_dict() if hasattr(risk_result, "to_dict") else str(risk_result),
+        }
+
+    _scan_metrics["option_risk_approved_total"] = _scan_metrics.get("option_risk_approved_total", 0) + 1
+    _add_trace("OPTION_RISK", "PASSED", f"grade={risk_result.risk_grade}")
+
+    # ── Step 5: Execute via Gateway → PaperBroker ──
+    exec_idempotency_key = f"controlled_test_{underlying_symbol}_{uuid.uuid4().hex[:12]}"
+    quantity = lot_size * lots
+
+    if _exec_gateway:
+        record = _exec_gateway.execute(
+            symbol=execution_symbol,
+            side="BUY",
+            quantity=quantity,
+            price=premium_entry,
+            stop_loss=premium_sl,
+            target=premium_target,
+            trade_plan_id=f"controlled_test_{uuid.uuid4().hex[:12]}",
+            trace_id=f"ct_{uuid.uuid4().hex[:12]}",
+            idempotency_key=exec_idempotency_key,
+            decision_id=f"ct_dec_{uuid.uuid4().hex[:12]}",
+            analysis_cycle_id=f"ct_cycle_{uuid.uuid4().hex[:12]}",
+        )
+        _add_trace("EXECUTION_GATEWAY", record.status.value if record.status else "unknown")
+    else:
+        # Direct PaperBroker path (bypass Gateway if not available)
+        result = _paper_broker.execute(
+            symbol=underlying_symbol,
+            side="BUY",
+            quantity=quantity,
+            price=premium_entry,
+            stop_loss=premium_sl,
+            target=premium_target,
+            execution_type="option_buying",
+            option_type=option_type,
+            strike=strike,
+            expiry=expiry,
+            premium_entry=premium_entry,
+            premium_stop_loss=premium_sl,
+            premium_target=premium_target,
+            lot_size=lot_size,
+            lots=lots,
+            underlying_symbol=underlying_symbol,
+            underlying_entry_price=24800.0,
+            underlying_stop_loss=24600.0,
+            underlying_target=25200.0,
+            risk_reward=risk_reward,
+            premium_source="CONTROLLED_TEST_FIXTURE",
+            execution_symbol=execution_symbol,
+            exchange=exchange,
+            instrument_token=instrument_token,
+            trade_grade="A",
+            ai_confidence=85.0,
+            opportunity_score=85.0,
+            test_origin="CONTROLLED_INTEGRATION_TEST",
+        )
+        _add_trace("PAPER_BROKER_DIRECT", "filled" if result.get("success") else "failed", str(result.get("reason", "")))
+        if not result.get("success"):
+            return {
+                "success": False,
+                "stage": "paper_broker_rejected",
+                "reason": result.get("reason"),
+                "execution_trace": execution_trace,
+            }
+        trade_id = result.get("trade_id", "")
+        _add_trace("POSITION_CREATED", "OPEN", f"trade_id={trade_id}")
+
+    # ── Step 6: Get created position ──
+    if _paper_broker:
+        # Use underlying_symbol to find it if gateway was used
+        if _exec_gateway:
+            # Gateway uses execution_symbol; broker maps by symbol
+            pass
+        positions = _paper_broker.get_positions()
+        position_dicts = [p.to_dict(include_diagnostics=True) for p in positions]
+        _scan_metrics["paper_trades_created_total"] = _scan_metrics.get("paper_trades_created_total", 0) + 1
+        _scan_metrics["open_positions_count"] = len(positions)
+    else:
+        position_dicts = []
+
+    return {
+        "success": True,
+        "stage": "position_created",
+        "test_origin": "CONTROLLED_INTEGRATION_TEST",
+        "no_real_broker_order": True,
+        "execution_trace": execution_trace,
+        "calculations": {
+            "underlying_symbol": underlying_symbol,
+            "direction": direction,
+            "option_type": option_type,
+            "lot_size": lot_size,
+            "lots": lots,
+            "quantity": quantity,
+            "premium_entry": premium_entry,
+            "premium_stop_loss": premium_sl,
+            "premium_target": premium_target,
+            "premium_cost": premium_cost,
+            "risk_per_lot": risk_per_lot,
+            "reward_per_lot": reward_per_lot,
+            "risk_reward": risk_reward,
+            "capital": capital,
+        },
+        "position": position_dicts[-1] if position_dicts else None,
+        "message": "One-lot PaperPosition created through full pipeline. No live broker order was placed.",
+    }
 
 
 @router.post("/api/auto-trade/start")

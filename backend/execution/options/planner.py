@@ -30,6 +30,7 @@ class OptionExecutionPlanner:
         underlying_target: float | None = None,
         capital: float = 100000.0,
         risk_percent: float = 2.0,
+        override_plan: dict[str, Any] | None = None,
     ) -> OptionExecutionPlan | None:
         """
         Build a complete option execution plan.
@@ -40,48 +41,83 @@ class OptionExecutionPlanner:
           3. Size position (lots from risk budget)
           4. Compute premium-level SL and target
           5. Return OptionExecutionPlan
+
+        When override_plan is provided, its values take precedence over
+        selection/fetch/sizing for controlled testing.
         """
         if not is_option_buying():
             return None
 
-        # 1. Select option contract
-        selection = OptionSelector.select(symbol, direction, underlying_price)
-        option_type = selection["option_type"]
-        expiry = selection["expiry"]
-        strike = selection["strike"]
-        lot_size = selection["lot_size"]
-
-        # 2. Fetch premium
-        premium_data = await PremiumFetcher.fetch_premium(
-            symbol=symbol,
-            option_type=option_type,
-            strike=strike,
-            underlying_price=underlying_price,
-        )
-        premium = premium_data["premium"]
-
-        # 3. Estimate premium-level SL (premium loss equal to underlying stop distance %)
-        if underlying_sl and underlying_price > 0:
-            underlying_risk_pct = abs(underlying_price - underlying_sl) / underlying_price
-            premium_sl = round(premium * (1 - underlying_risk_pct), 2)
+        # 1. Select option contract (use override if provided)
+        if override_plan and "option_type" in override_plan and "strike" in override_plan:
+            option_type = override_plan["option_type"]
+            expiry = override_plan.get("expiry", "")
+            strike = override_plan["strike"]
+            lot_size = override_plan.get("lot_size", 50)
         else:
-            premium_sl = round(premium * 0.8, 2)  # default 20% premium stop
+            selection = OptionSelector.select(symbol, direction, underlying_price)
+            option_type = selection["option_type"]
+            expiry = selection["expiry"]
+            strike = selection["strike"]
+            lot_size = selection["lot_size"]
 
-        # 4. Estimate premium-level target (same R:R as underlying)
-        if underlying_sl and underlying_target and underlying_price > 0:
-            underlying_rr = abs(underlying_target - underlying_price) / abs(underlying_price - underlying_sl)
-            premium_target = round(premium + (premium - premium_sl) * underlying_rr, 2)
+        # 2. Fetch premium (use override if provided)
+        if override_plan and "premium" in override_plan:
+            premium = override_plan["premium"]
+            premium_sl = override_plan.get("premium_sl", round(premium * 0.8, 2))
+            premium_target = override_plan.get("premium_target", round(premium * 1.5, 2))
+            premium_source = override_plan.get("premium_source", "CONTROLLED_TEST_FIXTURE")
         else:
-            premium_target = round(premium * 1.5, 2)  # default 50% premium target
+            premium_data = await PremiumFetcher.fetch_premium(
+                symbol=symbol,
+                option_type=option_type,
+                strike=strike,
+                underlying_price=underlying_price,
+            )
+            premium = premium_data["premium"]
+            premium_source = premium_data.get("source", "simulated")
 
-        # 5. Size position in lots
-        sizing = LotSizer.compute(
-            capital=capital,
-            risk_percent=risk_percent,
-            premium_entry=premium,
-            premium_sl=premium_sl,
-            lot_size=lot_size,
-        )
+        # 3. Premium-level SL (use override or compute)
+        if not (override_plan and ("premium_sl" in override_plan or "premium_target" in override_plan)):
+            if underlying_sl and underlying_price > 0:
+                underlying_risk_pct = abs(underlying_price - underlying_sl) / underlying_price
+                premium_sl = round(premium * (1 - underlying_risk_pct), 2)
+            else:
+                premium_sl = round(premium * 0.8, 2)
+
+            # 4. Premium-level target
+            if underlying_sl and underlying_target and underlying_price > 0:
+                underlying_rr = abs(underlying_target - underlying_price) / abs(underlying_price - underlying_sl)
+                premium_target = round(premium + (premium - premium_sl) * underlying_rr, 2)
+            else:
+                premium_target = round(premium * 1.5, 2)
+
+        # 5. Size position in lots (use override if provided)
+        if override_plan and "lots" in override_plan:
+            override_lots = override_plan["lots"]
+            sizing = {
+                "lots": override_lots,
+                "total_cost": premium * lot_size * override_lots,
+                "capital_required": premium * lot_size * override_lots,
+                "risk_per_lot": (premium - premium_sl) * lot_size,
+            }
+        else:
+            sizing = LotSizer.compute(
+                capital=capital,
+                risk_percent=risk_percent,
+                premium_entry=premium,
+                premium_sl=premium_sl,
+                lot_size=lot_size,
+            )
+
+        # Build execution_symbol
+        if override_plan and "execution_symbol" in override_plan:
+            exec_symbol = override_plan["execution_symbol"]
+        else:
+            exec_symbol = f"{symbol} {strike:.0f} {option_type} {expiry}"
+
+        # Instrument token
+        instr_token = override_plan.get("instrument_token", 0) if override_plan else 0
 
         plan = OptionExecutionPlan(
             underlying_symbol=symbol,
@@ -89,13 +125,13 @@ class OptionExecutionPlanner:
             option_type=option_type,
             expiry=expiry,
             strike=strike,
-            strike_interval=OptionSelector.get_strike_interval(symbol),
+            strike_interval=OptionSelector.get_strike_interval(symbol) if not override_plan else "",
             expiry_type="weekly",
-            execution_symbol=f"{symbol} {strike:.0f} {option_type} {expiry}",
+            execution_symbol=exec_symbol,
             lot_size=lot_size,
             lots=sizing["lots"],
             premium=premium,
-            premium_source=premium_data.get("source", "simulated"),
+            premium_source=premium_source,
             total_cost=sizing["total_cost"],
             capital_required=sizing["capital_required"],
             underlying_entry=underlying_price,

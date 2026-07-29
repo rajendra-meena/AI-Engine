@@ -11,7 +11,7 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { autoTradeService } from "@/services/autoTradeService"
-import type { WorkspaceResponse, OpportunityCandidate, TradePlan, AutoTradeSettings } from "@/services/autoTradeService"
+import type { WorkspaceResponse, OpportunityCandidate, TradePlan, AutoTradeSettings, PaperPosition, BlockedAttempt, PaperAccount } from "@/services/autoTradeService"
 import { orchestratorService } from "@/services/orchestratorService"
 import { executionService } from "@/services/executionService"
 import { useRealtimeStore } from "@/store/useRealtimeStore"
@@ -204,7 +204,7 @@ export function AutoTradeWorkspace() {
       ])
       if (!isToggling) setWorkspace(ws)
       if (sv) setAts(sv)
-      if (rt) { setRtMode(rt); setTradingMode(rt.mode); }
+      if (rt) { setRtMode({ mode: rt.mode, paper: !!rt.paper, can_execute_paper: !!rt.can_execute_paper }); setTradingMode(rt.mode); }
       setError(null)
     } catch (e) {
       setError("Could not connect to backend")
@@ -355,6 +355,29 @@ export function AutoTradeWorkspace() {
     }
   }, [workspace, fetchWorkspace])
 
+  const handleClosePosition = useCallback(async (tradeId: string) => {
+    try {
+      await autoTradeService.closePaperPosition(tradeId)
+      await fetchWorkspace()
+    } catch {
+      setError("Failed to close paper position")
+    }
+  }, [fetchWorkspace])
+
+  const handleControlledTest = useCallback(async () => {
+    setError(null)
+    try {
+      const result = await autoTradeService.controlledTestOneLot()
+      if (result.success) {
+        await fetchWorkspace()
+      } else {
+        setError(result.message || "Controlled test blocked — check settings")
+      }
+    } catch (e: any) {
+      setError(e.message || "Controlled test failed")
+    }
+  }, [fetchWorkspace])
+
   const handleKillSwitch = useCallback(async () => {
     setConfirmAction(null)
     setKillingSwitch(true)
@@ -384,6 +407,9 @@ export function AutoTradeWorkspace() {
   const blockingReasons = workspace?.blocking_reasons || []
   const errors = workspace?.errors || []
   const aiExplanation = workspace?.ai_explanation || null
+
+  // Auto execute paper trades (from settings)
+  const autoExecutePaper = ats?.auto_execute_paper_trades ?? true
 
   // Readiness summary
   const readinessEntries = Object.entries(readiness)
@@ -1137,6 +1163,147 @@ export function AutoTradeWorkspace() {
         )}
       </div>
     </div>
+      )}
+
+      {/* ═══ OPEN PAPER POSITIONS TABLE ═══ */}
+      {workspace?.open_positions && (
+        <SectionCard title="Open Paper Positions" icon={<Wallet className="w-3.5 h-3.5 text-emerald-500" />}>
+          {workspace.open_positions.length === 0 ? (
+            <p className="text-[10px] text-muted-foreground py-2">No open paper positions.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-[9px] font-mono">
+                <thead>
+                  <tr className="border-b text-muted-foreground">
+                    <th className="text-left px-1 py-1">Trade ID</th>
+                    <th className="text-left px-1 py-1">Underlying</th>
+                    <th className="text-left px-1 py-1">Symbol</th>
+                    <th className="text-left px-1 py-1">CE/PE</th>
+                    <th className="text-left px-1 py-1">Expiry</th>
+                    <th className="text-right px-1 py-1">Strike</th>
+                    <th className="text-right px-1 py-1">Lots</th>
+                    <th className="text-right px-1 py-1">Lot Size</th>
+                    <th className="text-right px-1 py-1">Qty</th>
+                    <th className="text-right px-1 py-1">Entry ₹</th>
+                    <th className="text-right px-1 py-1">Current ₹</th>
+                    <th className="text-right px-1 py-1">SL ₹</th>
+                    <th className="text-right px-1 py-1">Target ₹</th>
+                    <th className="text-right px-1 py-1">P&L</th>
+                    <th className="text-right px-1 py-1">P&L%</th>
+                    <th className="text-left px-1 py-1">Status</th>
+                    <th className="text-left px-1 py-1">Entry</th>
+                    <th className="text-right px-1 py-1">Conf</th>
+                    <th className="text-right px-1 py-1">Score</th>
+                    <th className="text-left px-1 py-1">Grade</th>
+                    <th className="text-right px-1 py-1">R:R</th>
+                    <th className="text-left px-1 py-1">Source</th>
+                    <th className="text-left px-1 py-1">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {workspace.open_positions.map((pos: PaperPosition) => (
+                    <tr key={pos.trade_id} className="border-b border-muted/20 hover:bg-muted/10">
+                      <td className="px-1 py-1 text-[8px]">{pos.trade_id?.slice(0,10) || "—"}</td>
+                      <td className="px-1 py-1 font-semibold">{pos.underlying_symbol || pos.symbol || "—"}</td>
+                      <td className="px-1 py-1">{pos.execution_symbol?.slice(0,18) || "—"}</td>
+                      <td className="px-1 py-1">{pos.option_type || "—"}</td>
+                      <td className="px-1 py-1 text-[8px]">{pos.expiry ? pos.expiry.slice(0,10) : "—"}</td>
+                      <td className="px-1 py-1 text-right">{pos.strike != null ? pos.strike.toFixed(0) : "—"}</td>
+                      <td className="px-1 py-1 text-right">{pos.lots ?? "—"}</td>
+                      <td className="px-1 py-1 text-right">{pos.lot_size ?? "—"}</td>
+                      <td className="px-1 py-1 text-right">{pos.quantity}</td>
+                      <td className="px-1 py-1 text-right">{pos.premium_entry != null ? pos.premium_entry.toFixed(1) : "—"}</td>
+                      <td className="px-1 py-1 text-right">{pos.premium_current != null ? pos.premium_current.toFixed(1) : pos.current_price?.toFixed(1) || "—"}</td>
+                      <td className="px-1 py-1 text-right text-red-500">{pos.premium_stop_loss != null ? pos.premium_stop_loss.toFixed(1) : "—"}</td>
+                      <td className="px-1 py-1 text-right text-emerald-500">{pos.premium_target != null ? pos.premium_target.toFixed(1) : "—"}</td>
+                      <td className={cn("px-1 py-1 text-right font-semibold", (pos.unrealized_pnl || 0) >= 0 ? "text-emerald-500" : "text-red-500")}>
+                        ₹{(pos.unrealized_pnl || 0).toFixed(1)}
+                      </td>
+                      <td className={cn("px-1 py-1 text-right", (pos.pnl_percent || 0) >= 0 ? "text-emerald-500" : "text-red-500")}>
+                        {(pos.pnl_percent || 0).toFixed(1)}%
+                      </td>
+                      <td className="px-1 py-1">
+                        <span className="px-1 py-0.5 rounded text-[7px] font-medium bg-emerald-500/10 text-emerald-500">{pos.status || "OPEN"}</span>
+                      </td>
+                      <td className="px-1 py-1 text-[8px]">{pos.entry_time ? timeAgo(pos.entry_time) : "—"}</td>
+                      <td className="px-1 py-1 text-right">{pos.ai_confidence != null ? `${pos.ai_confidence}%` : "—"}</td>
+                      <td className="px-1 py-1 text-right">{pos.opportunity_score != null ? pos.opportunity_score.toFixed(0) : "—"}</td>
+                      <td className="px-1 py-1">{pos.trade_grade || "—"}</td>
+                      <td className="px-1 py-1 text-right">{pos.risk_reward != null ? pos.risk_reward.toFixed(1) : "—"}</td>
+                      <td className="px-1 py-1 text-[7px]">{pos.premium_source?.slice(0,8) || "—"}</td>
+                      <td className="px-1 py-1">
+                        <div className="flex gap-1">
+                          <button onClick={() => handleClosePosition(pos.trade_id)}
+                            className="px-1.5 py-0.5 rounded text-[7px] font-medium bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors">
+                            Exit
+                          </button>
+                          <button className="px-1.5 py-0.5 rounded text-[7px] font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors">
+                            View
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {/* Paper Account Summary */}
+          {workspace?.paper_account && workspace.paper_account.initial_capital > 0 && (
+            <div className="flex flex-wrap gap-2 mt-2 border-t pt-2">
+              <Metric label="Capital" value={`₹${(workspace.paper_account.available_cash || 0).toFixed(0)}`} />
+              <Metric label="Equity" value={`₹${(workspace.paper_account.equity || 0).toFixed(0)}`} color={(workspace.paper_account.equity || 0) >= (workspace.paper_account.initial_capital || 0) ? "text-emerald-500" : "text-red-500"} />
+              <Metric label="P&L" value={`₹${(workspace.paper_account.total_pnl || 0).toFixed(0)}`} color={(workspace.paper_account.total_pnl || 0) >= 0 ? "text-emerald-500" : "text-red-500"} />
+              <Metric label="Return" value={`${(workspace.paper_account.return_pct || 0).toFixed(1)}%`} color={(workspace.paper_account.return_pct || 0) >= 0 ? "text-emerald-500" : "text-red-500"} />
+              <Metric label="Win Rate" value={`${(workspace.paper_account.win_rate || 0).toFixed(0)}%`} />
+              <Metric label="Open" value={workspace.paper_account.open_positions || 0} />
+              <Metric label="Closed" value={workspace.paper_account.closed_trades || 0} />
+            </div>
+          )}
+        </SectionCard>
+      )}
+
+      {/* ═══ BLOCKED ATTEMPTS PANEL ═══ */}
+      {workspace?.blocked_attempts && workspace.blocked_attempts.length > 0 && (
+        <SectionCard title="Recent Blocked Attempts" icon={<ShieldOff className="w-3.5 h-3.5 text-amber-500" />}>
+          <div className="space-y-1 max-h-48 overflow-y-auto">
+            {workspace.blocked_attempts.slice(-20).reverse().map((ba: BlockedAttempt, i: number) => (
+              <div key={ba.attempt_id || i} className="flex items-start gap-2 p-1.5 rounded border border-amber-500/10 bg-amber-500/5 text-[9px]">
+                <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-amber-600">{ba.block_code || "BLOCKED"}</span>
+                    <span className="text-[7px] text-muted-foreground">{ba.timestamp ? timeAgo(ba.timestamp) : ""}</span>
+                    <span className="text-[7px] text-muted-foreground">{ba.stage || ""}</span>
+                  </div>
+                  <div className="text-muted-foreground">{ba.block_reason || ""}</div>
+                  {ba.underlying_symbol && (
+                    <div className="text-[8px] text-muted-foreground">
+                      {ba.underlying_symbol} {ba.direction || ""} | {ba.actual_value ? `actual=${ba.actual_value}` : ""}{ba.required_value ? ` required=${ba.required_value}` : ""}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </SectionCard>
+      )}
+
+      {/* ═══ CONTROLLED TEST BUTTON (only in dev) ═══ */}
+      {process.env.NODE_ENV !== "production" && (
+        <div className="rounded-lg border border-blue-500/20 bg-blue-500/5 p-3">
+          <div className="flex items-center gap-2">
+            <Radar className="w-4 h-4 text-blue-500" />
+            <span className="text-xs font-medium text-blue-600">Dev Tools</span>
+            <button onClick={handleControlledTest}
+              className="ml-auto flex items-center gap-1 px-2 py-1 rounded text-[9px] font-medium bg-blue-500/10 text-blue-500 hover:bg-blue-500/20 border border-blue-500/20 transition-colors">
+              <Play className="w-3 h-3" /> Run Controlled 1-Lot Test
+            </button>
+          </div>
+          <p className="text-[8px] text-blue-500/60 mt-1">
+            Creates one PaperPosition through the full production pipeline. No live broker order.
+          </p>
+        </div>
       )}
 
       {/* ═══ ACTIVITY TIMELINE ═══ */}

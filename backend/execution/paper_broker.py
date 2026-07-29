@@ -87,6 +87,7 @@ class PaperPosition:
     """Active paper trading position."""
     trade_id: str = ""
     symbol: str = ""
+    execution_symbol: str = ""
     direction: str = "LONG"
     quantity: int = 0
     entry_price: float = 0.0
@@ -95,8 +96,11 @@ class PaperPosition:
     target: float | None = None
     unrealized_pnl: float = 0.0
     realized_pnl: float = 0.0
+    pnl_percent: float = 0.0
     created_at: str = ""
+    updated_at: str = ""
     exit_reason: str | None = None
+    exit_price: float | None = None
 
     # Decision traceability
     decision_id: str = ""
@@ -106,6 +110,7 @@ class PaperPosition:
     ai_direction: str = ""
     ai_confidence: float = 0.0
     opportunity_score: float = 0.0
+    trade_grade: str = ""
     source_provider: str = ""
     instrument_token: int = 0
     data_timestamp: str = ""
@@ -113,45 +118,68 @@ class PaperPosition:
 
     # Execution model fields
     execution_type: str = "synthetic_spot"
-    option_type: str | None = None
-    option_strike: float | None = None
-    option_expiry: str | None = None
-    option_premium: float | None = None
-    option_lot_size: int | None = None
-    option_lots: int | None = None
     underlying_symbol: str | None = None
-    underlying_entry_price: float | None = None
-    underlying_current_price: float | None = None
+    exchange: str = "NSE"
+    option_type: str | None = None
+    expiry: str | None = None
+    strike: float | None = None
+    premium_entry: float | None = None
+    premium_current: float | None = None
+    premium_stop_loss: float | None = None
+    premium_target: float | None = None
+    lot_size: int | None = None
+    lots: int | None = None
+    underlying_entry: float | None = None
+    underlying_current: float | None = None
+    underlying_stop_loss: float | None = None
+    underlying_target: float | None = None
+    risk_reward: float | None = None
+    premium_source: str = ""
+    test_origin: str = ""
 
     def to_dict(self, include_diagnostics: bool = False) -> dict[str, Any]:
-        d = {
+        d: dict[str, Any] = {
             "trade_id": self.trade_id,
-            "symbol": self.symbol,
+            "execution_symbol": self.execution_symbol,
             "direction": self.direction,
             "quantity": self.quantity,
-            "entry_price": self.entry_price,
-            "current_price": self.current_price,
-            "stop_loss": self.stop_loss,
-            "target": self.target,
+            "entry_price": round(self.entry_price, 2) if self.entry_price else 0,
+            "current_price": round(self.current_price, 2) if self.current_price else 0,
+            "stop_loss": round(self.stop_loss, 2) if self.stop_loss else None,
+            "target": round(self.target, 2) if self.target else None,
             "unrealized_pnl": round(self.unrealized_pnl, 2),
             "realized_pnl": round(self.realized_pnl, 2),
+            "pnl_percent": round(self.pnl_percent, 2),
             "created_at": self.created_at,
+            "updated_at": self.updated_at or self.created_at,
+            "entry_time": self.created_at,
+            "status": "OPEN" if self.exit_reason is None else "CLOSED",
             "execution_type": self.execution_type,
+            "symbol": self.underlying_symbol or self.symbol,
+            "exchange": self.exchange,
         }
         if self.execution_type == "option_buying":
             d.update({
                 "option_type": self.option_type,
-                "option_strike": self.option_strike,
-                "option_expiry": self.option_expiry,
-                "option_premium": self.option_premium,
-                "option_lot_size": self.option_lot_size,
-                "option_lots": self.option_lots,
+                "strike": self.strike,
+                "expiry": self.expiry,
+                "premium_entry": round(self.premium_entry, 2) if self.premium_entry else None,
+                "premium_current": round(self.premium_current, 2) if self.premium_current else None,
+                "premium_stop_loss": round(self.premium_stop_loss, 2) if self.premium_stop_loss else None,
+                "premium_target": round(self.premium_target, 2) if self.premium_target else None,
+                "lot_size": self.lot_size,
+                "lots": self.lots,
                 "underlying_symbol": self.underlying_symbol,
-                "underlying_entry_price": self.underlying_entry_price,
-                "underlying_current_price": self.underlying_current_price,
+                "underlying_entry": round(self.underlying_entry, 2) if self.underlying_entry else None,
+                "underlying_current": round(self.underlying_current, 2) if self.underlying_current else None,
+                "underlying_stop_loss": round(self.underlying_stop_loss, 2) if self.underlying_stop_loss else None,
+                "underlying_target": round(self.underlying_target, 2) if self.underlying_target else None,
+                "risk_reward": round(self.risk_reward, 2) if self.risk_reward else None,
+                "premium_source": self.premium_source,
             })
         if include_diagnostics:
             d.update({
+                "trade_id": self.trade_id,
                 "decision_id": self.decision_id,
                 "analysis_cycle_id": self.analysis_cycle_id,
                 "candle_version": self.candle_version,
@@ -159,12 +187,47 @@ class PaperPosition:
                 "ai_direction": self.ai_direction,
                 "ai_confidence": self.ai_confidence,
                 "opportunity_score": self.opportunity_score,
+                "trade_grade": self.trade_grade,
                 "source_provider": self.source_provider,
                 "instrument_token": self.instrument_token,
                 "data_timestamp": self.data_timestamp,
                 "entry_reason": self.entry_reason,
+                "test_origin": self.test_origin,
             })
         return d
+
+
+@dataclass
+class BlockedAttempt:
+    """Record of a blocked execution attempt with exact reason."""
+    attempt_id: str = ""
+    timestamp: str = ""
+    underlying_symbol: str = ""
+    direction: str = ""
+    analysis_cycle_id: str = ""
+    stage: str = ""
+    block_code: str = ""
+    block_reason: str = ""
+    actual_value: str = ""
+    required_value: str = ""
+    settings_snapshot: dict[str, Any] | None = None
+    risk_snapshot: dict[str, Any] | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "attempt_id": self.attempt_id,
+            "timestamp": self.timestamp,
+            "underlying_symbol": self.underlying_symbol,
+            "direction": self.direction,
+            "analysis_cycle_id": self.analysis_cycle_id,
+            "stage": self.stage,
+            "block_code": self.block_code,
+            "block_reason": self.block_reason,
+            "actual_value": self.actual_value,
+            "required_value": self.required_value,
+            "settings_snapshot": self.settings_snapshot,
+            "risk_snapshot": self.risk_snapshot,
+        }
 
 
 class PaperBroker:
@@ -187,6 +250,8 @@ class PaperBroker:
         self._account = PaperAccount()
         self._running = False
         self._paused = False
+        self._blocked_attempts: list[BlockedAttempt] = []
+        self._max_blocked_attempts = 50
 
     def set_trade_lifecycle(self, tlc: TradeLifecycleManager):
         self._trade_lifecycle = tlc
@@ -230,6 +295,7 @@ class PaperBroker:
         self._positions.clear()
         self._history.clear()
         self._orders.clear()
+        self._blocked_attempts.clear()
         self._account = PaperAccount(self._account.initial_capital)
         if self._pnl_engine:
             self._pnl_engine.reset()
@@ -256,6 +322,7 @@ class PaperBroker:
         ai_direction: str = "",
         ai_confidence: float = 0.0,
         opportunity_score: float = 0.0,
+        trade_grade: str = "",
         source_provider: str = "",
         instrument_token: int = 0,
         data_timestamp: str = "",
@@ -270,6 +337,21 @@ class PaperBroker:
         option_lots: int | None = None,
         underlying_symbol: str | None = None,
         underlying_entry_price: float | None = None,
+        # Enhanced option fields
+        premium_entry: float | None = None,
+        premium_stop_loss: float | None = None,
+        premium_target: float | None = None,
+        strike: float | None = None,
+        expiry: str | None = None,
+        lot_size: int | None = None,
+        lots: int | None = None,
+        underlying_stop_loss: float | None = None,
+        underlying_target: float | None = None,
+        risk_reward: float | None = None,
+        premium_source: str = "",
+        execution_symbol: str = "",
+        exchange: str = "NSE",
+        test_origin: str = "",
     ) -> dict[str, Any]:
         """Execute a paper order."""
         if not self._running or self._paused:
@@ -311,16 +393,19 @@ class PaperBroker:
 
         direction = "LONG" if side == "BUY" else "SHORT"
         trade_id = f"pt_{uuid.uuid4().hex[:12]}"
+        now_ts = _now()
         position = PaperPosition(
             trade_id=trade_id,
             symbol=symbol,
+            execution_symbol=execution_symbol or symbol,
             direction=direction,
             quantity=quantity,
             entry_price=entry,
             current_price=entry,
-            stop_loss=stop_loss,
-            target=target,
-            created_at=_now(),
+            stop_loss=stop_loss or premium_stop_loss,
+            target=target or premium_target,
+            created_at=now_ts,
+            updated_at=now_ts,
             decision_id=decision_id,
             analysis_cycle_id=analysis_cycle_id,
             candle_version=candle_version,
@@ -328,19 +413,28 @@ class PaperBroker:
             ai_direction=ai_direction or side,
             ai_confidence=ai_confidence,
             opportunity_score=opportunity_score,
+            trade_grade=trade_grade,
             source_provider=source_provider or "paper",
             instrument_token=instrument_token,
             data_timestamp=data_timestamp,
             entry_reason=entry_reason or side,
             execution_type=execution_type,
+            underlying_symbol=underlying_symbol or symbol,
+            exchange=exchange,
             option_type=option_type,
-            option_strike=option_strike,
-            option_expiry=option_expiry,
-            option_premium=option_premium,
-            option_lot_size=option_lot_size,
-            option_lots=option_lots,
-            underlying_symbol=underlying_symbol,
-            underlying_entry_price=underlying_entry_price,
+            expiry=expiry or option_expiry,
+            strike=strike or option_strike,
+            premium_entry=premium_entry or option_premium,
+            premium_stop_loss=premium_stop_loss,
+            premium_target=premium_target,
+            lot_size=lot_size or option_lot_size,
+            lots=lots or option_lots,
+            underlying_entry=underlying_entry_price,
+            underlying_stop_loss=underlying_stop_loss,
+            underlying_target=underlying_target,
+            risk_reward=risk_reward,
+            premium_source=premium_source,
+            test_origin=test_origin,
         )
         self._positions[trade_id] = position
         self._account.open_positions += 1
@@ -429,6 +523,8 @@ class PaperBroker:
 
         pos.realized_pnl = realized
         pos.exit_reason = reason
+        pos.exit_price = exit_price
+        pos.updated_at = _now()
         self._account.open_positions -= 1
         self._account.closed_trades += 1
         self._account.total_realized_pnl += realized
@@ -482,6 +578,9 @@ class PaperBroker:
                 return pos
         return None
 
+    def get_position_by_id(self, trade_id: str) -> PaperPosition | None:
+        return self._positions.get(trade_id)
+
     def get_positions(self) -> list[PaperPosition]:
         return list(self._positions.values())
 
@@ -507,6 +606,43 @@ class PaperBroker:
                 "timestamp": t.get("closed_at"),
             })
         return events
+
+    def record_blocked_attempt(
+        self,
+        underlying_symbol: str = "",
+        direction: str = "",
+        analysis_cycle_id: str = "",
+        stage: str = "",
+        block_code: str = "",
+        block_reason: str = "",
+        actual_value: str = "",
+        required_value: str = "",
+        settings_snapshot: dict | None = None,
+        risk_snapshot: dict | None = None,
+    ) -> BlockedAttempt:
+        attempt = BlockedAttempt(
+            attempt_id=f"ba_{uuid.uuid4().hex[:8]}",
+            timestamp=_now(),
+            underlying_symbol=underlying_symbol,
+            direction=direction,
+            analysis_cycle_id=analysis_cycle_id,
+            stage=stage,
+            block_code=block_code,
+            block_reason=block_reason,
+            actual_value=actual_value,
+            required_value=required_value,
+            settings_snapshot=settings_snapshot,
+            risk_snapshot=risk_snapshot,
+        )
+        self._blocked_attempts.append(attempt)
+        if len(self._blocked_attempts) > self._max_blocked_attempts:
+            self._blocked_attempts = self._blocked_attempts[-self._max_blocked_attempts:]
+        log_info("PaperBroker: blocked attempt recorded",
+                 code=block_code, symbol=underlying_symbol, reason=block_reason)
+        return attempt
+
+    def get_blocked_attempts(self, limit: int = 50) -> list[dict[str, Any]]:
+        return [a.to_dict() for a in self._blocked_attempts[-limit:]]
 
 
 # Singleton
