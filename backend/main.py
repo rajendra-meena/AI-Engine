@@ -329,9 +329,8 @@ async def lifespan(app: FastAPI):
     paper_broker = init_paper_broker(trade_lifecycle, pnl_engine, LifecycleEventService(event_bus))
 
     # Wire Phase 2D services: DB persistence and premium tick router
-    import database.paper_trading_schema as _pts
     import services.paper_trading_db as _ptdb
-    _pts.init_paper_trading_tables()
+    _ptdb.init_paper_trading_tables()
     paper_broker.set_db_service(_ptdb)
 
     from execution.options.premium_monitor import get_premium_tick_router, PremiumTickRouter
