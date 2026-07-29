@@ -103,6 +103,7 @@ class ExecutionRecord:
     updated_at: str = ""
     decision_id: str = ""
     analysis_cycle_id: str = ""
+    options: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -238,6 +239,7 @@ class ExecutionGateway:
         decision_id: str = "",
         analysis_cycle_id: str = "",
         live_token: str = "",
+        options: dict | None = None,
     ) -> ExecutionRecord:
         eid = f"exec_{uuid.uuid4().hex[:12]}"
         now = datetime.now(timezone.utc).isoformat()
@@ -272,6 +274,7 @@ class ExecutionGateway:
             execution_mode=self._mode.value,
             created_at=now,
             updated_at=now,
+            options=options or {},
         )
 
         # 1. Idempotency check — same key returns cached result
@@ -422,6 +425,21 @@ class ExecutionGateway:
             decision_id=record.decision_id,
             analysis_cycle_id=record.analysis_cycle_id,
             source_provider="ZERODHA_KITE",
+            # Option execution fields (passed from TradePlan through Gateway)
+            execution_type=record.options.get("execution_type", "synthetic_spot") if hasattr(record, 'options') else "synthetic_spot",
+            option_type=record.options.get("option_type") if hasattr(record, 'options') else None,
+            strike=record.options.get("strike") if hasattr(record, 'options') else None,
+            expiry=record.options.get("expiry") if hasattr(record, 'options') else None,
+            premium_entry=record.options.get("premium_entry") if hasattr(record, 'options') else None,
+            premium_stop_loss=record.options.get("premium_stop_loss") if hasattr(record, 'options') else None,
+            premium_target=record.options.get("premium_target") if hasattr(record, 'options') else None,
+            lot_size=record.options.get("lot_size") if hasattr(record, 'options') else None,
+            lots=record.options.get("lots") if hasattr(record, 'options') else None,
+            underlying_symbol=record.options.get("underlying_symbol") if hasattr(record, 'options') else None,
+            risk_reward=record.options.get("risk_reward") if hasattr(record, 'options') else None,
+            premium_source=record.options.get("premium_source", "") if hasattr(record, 'options') else "",
+            premium_instrument_token=record.options.get("premium_instrument_token", 0) if hasattr(record, 'options') else 0,
+            source_provenance=record.options.get("source_provenance", "") if hasattr(record, 'options') else "",
         )
         return result
 

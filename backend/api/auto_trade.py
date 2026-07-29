@@ -1393,6 +1393,26 @@ async def _try_execute_trade(
 
     _stage("EXECUTION_GATEWAY_CALLED")
 
+    # Build option execution fields if this is an option-buying trade
+    exec_options = {}
+    if hasattr(plan, 'execution_type') and plan.execution_type == "option_buying":
+        exec_options = {
+            "execution_type": "option_buying",
+            "option_type": getattr(plan, 'option_type', None),
+            "strike": getattr(plan, 'option_strike', None),
+            "expiry": getattr(plan, 'option_expiry', None),
+            "premium_entry": getattr(plan, 'option_premium', None),
+            "premium_stop_loss": getattr(plan, 'stop_price', None),
+            "premium_target": getattr(plan, 'target_price', None),
+            "lot_size": getattr(plan, 'option_lot_size', None),
+            "lots": getattr(plan, 'option_lots', None),
+            "underlying_symbol": getattr(plan, 'underlying_entry_price', None) and symbol,
+            "risk_reward": getattr(plan, 'risk_reward', None),
+            "premium_source": "ZERODHA_KITE_QUOTE",
+            "premium_instrument_token": getattr(plan, 'option_instrument_token', 0),
+            "source_provenance": "zerodha_kite",
+        }
+
     try:
         record = _exec_gateway.execute(
             symbol=symbol,
@@ -1406,6 +1426,7 @@ async def _try_execute_trade(
             idempotency_key=exec_idempotency_key,
             decision_id=decision.decision_id,
             analysis_cycle_id=analysis_cycle_id,
+            options=exec_options,
         )
     except Exception as e:
         import traceback
