@@ -1184,22 +1184,40 @@ async def _try_execute_trade(
         from execution.execution_config import is_option_buying
         if is_option_buying():
             from execution.options.planner import OptionExecutionPlanner
+
+            # Get paper capital from broker for risk calculations
+            ats_settings = get_ats()
+            paper_capital = 100000.0
+            try:
+                if _paper_broker:
+                    acct = _paper_broker.get_account()
+                    paper_capital = acct.available_cash or acct.initial_capital or 100000.0
+            except Exception:
+                pass
+
             option_plan = await OptionExecutionPlanner.execute(
                 symbol=symbol,
                 direction=direction,
                 underlying_price=market_price,
                 underlying_sl=None,
                 underlying_target=None,
-                capital=100000.0,
+                capital=paper_capital,
                 risk_percent=2.0,
+                premium_source=ats_settings.premium_source if hasattr(ats_settings, 'premium_source') else "ZERODHA",
             )
             if option_plan is not None:
+                _scan_metrics["option_plans_created_total"] = _scan_metrics.get("option_plans_created_total", 0) + 1
+                if option_plan.premium > 0:
+                    _scan_metrics["premium_ready_total"] = _scan_metrics.get("premium_ready_total", 0) + 1
                 _stage("OPTION_PLAN_CREATED",
                        option=f"{option_plan.strike:.0f}{option_plan.option_type}",
                        premium=option_plan.premium,
+                       source=option_plan.premium_source,
                        lots=option_plan.lots,
                        lot_size=option_plan.lot_size,
                        cost=option_plan.total_cost)
+            else:
+                _stage("OPTION_PLAN_FAILED", reason="planner returned None")
     except ImportError:
         pass
     except Exception as e:
@@ -1222,8 +1240,47 @@ async def _try_execute_trade(
     }
 
     if option_plan is not None:
-        # ── Option path ──
+        # ── Option path: Validate with OptionRiskEngine ──
+        from execution.options.risk import OptionRiskEngine
+
+        # Sync risk engine capital with paper broker account
+        option_risk_capital = 100000.0
+        if _paper_broker:
+            try:
+                acct = _paper_broker.get_account()
+                option_risk_capital = acct.available_cash
+            except Exception:
+                pass
+
+        ore = OptionRiskEngine(capital=option_risk_capital, risk_percent=2.0)
+        ore.set_settings(get_ats())
+        if _paper_broker:
+            ore.set_open_positions(len(_paper_broker.get_positions()))
+        option_risk_result = ore.validate(option_plan)
+
+        if not option_risk_result.execution_permitted:
+            _scan_metrics["risk_blocked_total"] = _scan_metrics.get("risk_blocked_total", 0) + 1
+            if _paper_broker:
+                _paper_broker.record_blocked_attempt(
+                    underlying_symbol=symbol,
+                    direction=direction,
+                    stage="option_risk",
+                    block_code="OPTION_RISK_BLOCKED",
+                    block_reason="; ".join(option_risk_result.rejected_by),
+                    actual_value=f"capital={option_risk_capital:.0f}",
+                    required_value="execution_permitted=true",
+                    risk_snapshot=option_risk_result.to_dict(),
+                )
+            return _fail("EXEC_BLOCK_OPTION_RISK",
+                         "OptionRiskEngine rejected: " + "; ".join(option_risk_result.rejected_by),
+                         risk_result=option_risk_result.to_dict())
+
+        _scan_metrics["option_risk_approved_total"] = _scan_metrics.get("option_risk_approved_total", 0) + 1
+        _stage("OPTION_RISK_PASSED", grade=option_risk_result.risk_grade)
+
         # Use premium-based price for TradePlanner, override with option values
+        # NOTE: OptionRiskEngine already validated this trade — skip legacy risk
+        _option_risk_already_passed = True
         try:
             plan = planner.build_plan(
                 decision=decision,
@@ -1306,11 +1363,15 @@ async def _try_execute_trade(
                      plan_rejection=plan.rejection_reason)
     _scan_metrics["trade_plans_created_total"] = _scan_metrics.get("trade_plans_created_total", 0) + 1
 
-    if plan.risk_status == "blocked":
-        _scan_metrics["risk_blocked_total"] = _scan_metrics.get("risk_blocked_total", 0) + 1
-        return _fail("EXEC_BLOCK_RISK_REJECTED", f"Risk blocked: {plan.risk_block_reason}",
-                     risk_reason=plan.risk_block_reason)
-    _scan_metrics["risk_approved_total"] = _scan_metrics.get("risk_approved_total", 0) + 1
+    # Option path already validated by OptionRiskEngine — skip legacy spot risk check
+    if not locals().get("_option_risk_already_passed"):
+        if plan.risk_status == "blocked":
+            _scan_metrics["risk_blocked_total"] = _scan_metrics.get("risk_blocked_total", 0) + 1
+            return _fail("EXEC_BLOCK_RISK_REJECTED", f"Risk blocked: {plan.risk_block_reason}",
+                         risk_reason=plan.risk_block_reason)
+        _scan_metrics["risk_approved_total"] = _scan_metrics.get("risk_approved_total", 0) + 1
+    else:
+        _stage("OPTION_RISK_SKIPPED_LEGACY")
 
     if not _exec_gateway:
         return _fail("EXEC_BLOCK_GATEWAY_UNAVAILABLE", "ExecutionGateway not available")

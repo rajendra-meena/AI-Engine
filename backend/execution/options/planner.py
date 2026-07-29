@@ -11,7 +11,7 @@ from execution.options.selector import OptionSelector
 from execution.options.premium import PremiumFetcher
 from execution.options.sizing import LotSizer
 from execution.execution_config import is_option_buying
-from utils.logger import log_info
+from utils.logger import log_info, log_warn
 
 
 class OptionExecutionPlanner:
@@ -31,6 +31,7 @@ class OptionExecutionPlanner:
         capital: float = 100000.0,
         risk_percent: float = 2.0,
         override_plan: dict[str, Any] | None = None,
+        premium_source: str | None = None,
     ) -> OptionExecutionPlan | None:
         """
         Build a complete option execution plan.
@@ -44,6 +45,9 @@ class OptionExecutionPlanner:
 
         When override_plan is provided, its values take precedence over
         selection/fetch/sizing for controlled testing.
+
+        When premium_source='ZERODHA' and override_plan is None,
+        a real Zerodha quote is required — simulated fallback is blocked.
         """
         if not is_option_buying():
             return None
@@ -68,14 +72,23 @@ class OptionExecutionPlanner:
             premium_target = override_plan.get("premium_target", round(premium * 1.5, 2))
             premium_source = override_plan.get("premium_source", "CONTROLLED_TEST_FIXTURE")
         else:
+            effective_source = premium_source or "ZERODHA"
             premium_data = await PremiumFetcher.fetch_premium(
                 symbol=symbol,
                 option_type=option_type,
                 strike=strike,
                 underlying_price=underlying_price,
+                expiry=expiry,
+                lot_size=lot_size,
+                source=effective_source,
             )
-            premium = premium_data["premium"]
-            premium_source = premium_data.get("source", "simulated")
+            premium = premium_data.get("premium", 0.0)
+            if premium <= 0:
+                error_detail = premium_data.get("error_detail", "Premium unavailable")
+                log_warn("OptionExecutionPlanner: premium fetch failed",
+                         symbol=symbol, source=effective_source, error=error_detail)
+                return None
+            premium_source = premium_data.get("source", effective_source)
 
         # 3. Premium-level SL (use override or compute)
         if not (override_plan and ("premium_sl" in override_plan or "premium_target" in override_plan)):
