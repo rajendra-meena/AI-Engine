@@ -36,8 +36,9 @@ class RuntimeModeManager:
             "data_cache",
             "runtime_mode.json",
         )
-        self._load()
+        self._phase_39_lock = True  # Hard lock for Phase 39
         self._controlled_live_active = False
+        self._load()
 
     def _load(self):
         """Load persisted mode if available."""
@@ -60,8 +61,6 @@ class RuntimeModeManager:
                 json.dump({"mode": self._mode.value, "updated_at": datetime.now(timezone.utc).isoformat()}, f)
         except Exception:
             pass
-        self._phase_39_lock = True  # Hard lock for Phase 39
-        self._controlled_live_active = False
 
     @property
     def mode(self) -> RuntimeMode:
