@@ -80,6 +80,7 @@ class InstrumentManager:
             cache_age = datetime.now().timestamp() - os.path.getmtime(INSTRUMENT_CACHE_FILE)
             if cache_age > self.CACHE_TTL_SECONDS:
                 log_info("InstrumentManager: cache expired")
+                os.remove(INSTRUMENT_CACHE_FILE)
                 return False
 
             with open(INSTRUMENT_CACHE_FILE, "r") as f:
@@ -96,7 +97,11 @@ class InstrumentManager:
             )
             return True
         except Exception as e:
-            log_warn("InstrumentManager: cache load failed", error=str(e))
+            log_warn("InstrumentManager: cache load failed, removing corrupt cache", error=str(e))
+            try:
+                os.remove(INSTRUMENT_CACHE_FILE)
+            except Exception:
+                pass
             return False
 
     async def _download(self) -> bool:
@@ -107,7 +112,11 @@ class InstrumentManager:
 
         try:
             import asyncio
-            instruments = await asyncio.to_thread(self._kite.instruments)
+            # Increase timeout for large NFO instrument master (5MB+)
+            instruments = await asyncio.wait_for(
+                asyncio.to_thread(self._kite.instruments),
+                timeout=120.0
+            )
             self._instruments = instruments
             self._last_download = datetime.now(timezone.utc)
             self._build_index()
@@ -121,6 +130,9 @@ class InstrumentManager:
                 count=len(self._instruments),
             )
             return True
+        except asyncio.TimeoutError:
+            log_error("InstrumentManager: download timed out (120s)")
+            return False
         except Exception as e:
             log_error("InstrumentManager: download failed", error=str(e))
             return False
