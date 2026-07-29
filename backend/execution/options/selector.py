@@ -81,6 +81,10 @@ class OptionSelector:
         """
         Select an option contract for the given underlying.
 
+        Computes the ATM strike from the live underlying price, resolves
+        expiry and lot size. When the Zerodha instrument manager is available,
+        also resolves the real instrument token, trading symbol, and exchange.
+
         Returns serializable dict with option selection details.
         """
         option_type = cls.select_option_type(direction)
@@ -88,12 +92,51 @@ class OptionSelector:
         strike = cls.round_strike(underlying_price, interval)
         expiry = cls.nearest_weekly_expiry()
         lot_size = cls.get_lot_size(symbol)
+        expiry_compact = expiry.isoformat()
+
+        # Resolve real instrument metadata from Zerodha instrument master
+        instrument_token = 0
+        trading_symbol = ""
+        exchange = "NFO"
+
+        try:
+            from main import zerodha_engine as _ze
+            if _ze and hasattr(_ze, '_instrument_manager') and _ze._instrument_manager and _ze._instrument_manager.is_loaded:
+                im = _ze._instrument_manager
+                # Map internal name to Kite trading symbol
+                kite_symbol = im.map_to_kite_symbol(symbol)
+                if not kite_symbol:
+                    kite_symbol = symbol
+                # Look up the option instrument by symbol prefix, expiry and strike
+                expiry_str = expiry_compact[:10]
+                for inst in getattr(im, '_instruments', []) or []:
+                    ts = inst.get("tradingsymbol", "")
+                    seg = inst.get("segment", "")
+                    inst_type = inst.get("instrument_type", "")
+                    inst_expiry = inst.get("expiry", "")
+                    inst_strike = inst.get("strike", 0)
+                    if (seg == "NFO" and inst_type in ("OPTIDX", "OPTSTK")
+                            and ts.startswith(kite_symbol)
+                            and inst_expiry == expiry_str
+                            and abs(inst_strike - strike) < interval):
+                        instrument_token = inst.get("instrument_token", 0)
+                        trading_symbol = ts
+                        exchange = inst.get("exchange", "NFO")
+                        lot_size = inst.get("lot_size", lot_size)
+                        break
+        except ImportError:
+            pass
+        except Exception:
+            pass
 
         return {
             "option_type": option_type,
-            "expiry": expiry.isoformat(),
+            "expiry": expiry_compact,
             "strike": strike,
             "strike_interval": interval,
             "expiry_type": "weekly",
             "lot_size": lot_size,
+            "instrument_token": instrument_token,
+            "trading_symbol": trading_symbol,
+            "exchange": exchange,
         }

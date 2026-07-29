@@ -2408,23 +2408,37 @@ async def auto_trade_controlled_one_lot_test():
     # ── Controlled inputs ──
     underlying_symbol = "NIFTY 50"
     direction = "LONG"
-    option_type = "CE"
-    lot_size = 50        # NIFTY standard lot
     lots = 1
     premium_entry = 180.0
     premium_sl = 160.0
     premium_target = 220.0
-    strike = 24800.0      # example ATM strike
-    expiry = "2026-08-06"  # nearest weekly
-    exchange = "NFO"
-    instrument_token = 1000001
-    execution_symbol = "NIFTY 50 24800 CE"
+
+    # Dynamically select ATM strike from current market data
+    from execution.options.selector import OptionSelector
+    try:
+        market_price = 24800.0  # fallback
+        if _freshness_tracker and _zerodha_engine:
+            snap = _zerodha_engine.latest_underlying_price(underlying_symbol)
+            if snap and snap > 0:
+                market_price = snap
+        selection = OptionSelector.select(underlying_symbol, direction, market_price)
+        option_type = selection["option_type"]
+        strike = selection["strike"]
+        expiry = selection["expiry"]
+        lot_size = selection["lot_size"]
+        instrument_token = selection.get("instrument_token", 0)
+        exchange = selection.get("exchange", "NFO")
+        trading_symbol = selection.get("trading_symbol", "")
+    except Exception as e:
+        return {"success": False, "stage": "option_selection_error", "error": str(e)}
+
+    execution_symbol = trading_symbol or f"{underlying_symbol} {strike:.0f} {option_type}"
     capital = 100000.0
     risk_reward = 2.0
-    quantity = lot_size * lots  # 50
-    premium_cost = premium_entry * lot_size  # 180 * 50 = 9000
-    risk_per_lot = (premium_entry - premium_sl) * lot_size  # 20 * 50 = 1000
-    reward_per_lot = (premium_target - premium_entry) * lot_size  # 40 * 50 = 2000
+    quantity = lot_size * lots
+    premium_cost = premium_entry * lot_size
+    risk_per_lot = (premium_entry - premium_sl) * lot_size
+    reward_per_lot = (premium_target - premium_entry) * lot_size
 
     # ── Step 1: Validate settings gates ──
     settings = get_ats()
