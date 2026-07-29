@@ -152,6 +152,17 @@ async def lifespan(app: FastAPI):
     provider_factory = ProviderFactory()
     set_provider_factory(provider_factory)
 
+    # Switch MarketDataService to Zerodha Kite — Auto Trade must NEVER use Yahoo
+    # for live analysis. MarketDataService.get_intraday() will now use
+    # Zerodha Kite historical data instead of Yahoo Finance.
+    try:
+        provider_factory.get_provider("zerodha")  # ensure Zerodha instance exists
+        market_service.set_provider("zerodha")
+        log_info("MarketDataService: provider switched to zerodha for Auto Trade")
+    except Exception as e:
+        log_warn("MarketDataService: zerodha provider not available, using default",
+                 error=str(e))
+
     # Initialize the Risk Firewall
     from risk.risk_engine import RiskEngine
     from risk.risk_logger import init_risk_tables

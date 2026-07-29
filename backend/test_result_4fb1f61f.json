@@ -1,0 +1,5 @@
+{
+  "success": false,
+  "stage": "option_risk_error",
+  "error": "OptionRiskEngine.validate() got an unexpected keyword argument 'option_plan'"
+}

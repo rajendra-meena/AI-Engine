@@ -2507,10 +2507,9 @@ async def auto_trade_controlled_one_lot_test():
     # ── Step 4: Option Risk Validation ──
     try:
         from execution.options.risk import OptionRiskEngine
-        risk_result = OptionRiskEngine.validate(
-            option_plan=option_plan,
-            settings=settings,
-        )
+        ore = OptionRiskEngine(capital=capital, risk_percent=2.0)
+        ore.set_settings(settings)
+        risk_result = ore.validate(option_plan)
     except Exception as e:
         return {"success": False, "stage": "option_risk_error", "error": str(e)}
 
@@ -2520,7 +2519,7 @@ async def auto_trade_controlled_one_lot_test():
             direction=direction,
             stage="option_risk",
             block_code="OPTION_RISK_BLOCKED",
-            block_reason="; ".join(risk_result.rejected_by) if risk_result.rejected_by else risk_result.reason,
+            block_reason="; ".join(risk_result.rejected_by) if risk_result.rejected_by else "Option risk block",
             actual_value=f"permitted={risk_result.execution_permitted}",
             required_value="permitted=true",
             risk_snapshot={"risk_score": risk_result.risk_score, "risk_grade": risk_result.risk_grade, "rejected_by": risk_result.rejected_by},
