@@ -515,20 +515,22 @@ async def _run_fresh_analysis(symbol: str, analysis_cycle_id: str = "") -> dict[
         8. Run risk validation
     """
     if not _is_analysis_needed(symbol):
+        log_warn("AUTO_TRADE_DIAG: _is_analysis_needed returned False", symbol=symbol)
         return None
 
     # 1. Verify data freshness for this symbol
     if _freshness_tracker:
         safe, reason = _freshness_tracker.is_data_safe(symbol)
         if not safe:
-            log_info("AutoTrade: skipping symbol, data not safe", symbol=symbol, reason=reason)
+            log_warn("AUTO_TRADE_DIAG: data not safe", symbol=symbol, reason=reason)
             return None
 
     # 2. Get the latest AI decision (pushed by event chain)
     ai_snap = _get_ai().latest(symbol)
     if not ai_snap:
-        log_info("AutoTrade: no AI snapshot yet", symbol=symbol)
+        log_warn("AUTO_TRADE_DIAG: no AI snapshot yet", symbol=symbol)
         return None
+    log_info("AUTO_TRADE_DIAG: AI snapshot found", symbol=symbol, score=ai_snap.get("score"), confidence=ai_snap.get("confidence"))
 
     # 3. Update regime with latest context
     regime_engine = _get_regime()
@@ -557,6 +559,12 @@ async def _run_fresh_analysis(symbol: str, analysis_cycle_id: str = "") -> dict[
 
     # 4. Build opportunity score from fresh data
     result = _build_opportunity_score(symbol, ai_snap, regime_snap)
+    log_info("AUTO_TRADE_DIAG: opportunity score built",
+             symbol=symbol,
+             direction=result.get("direction", "NONE"),
+             score=result.get("opportunity_score", 0),
+             reasons=len(result.get("reject_reasons", [])),
+             has_reject=bool(result.get("reject_reasons")))
 
     # Track pipeline counters — raw_directional_signals_total only here
     raw_dir = result.get("direction", "NONE")
@@ -566,6 +574,8 @@ async def _run_fresh_analysis(symbol: str, analysis_cycle_id: str = "") -> dict[
     # 5. If opportunity qualifies, bridge to execution
     # NOTE: score_qualified_candidates_total is incremented in _handle_candle_closed (one place only)
     if result and result.get("opportunity_score", 0) >= 50 and result.get("direction") in ("LONG", "BUY", "SHORT", "SELL"):
+        log_info("AUTO_TRADE_DIAG: opportunity qualifies, checking reject_reasons",
+                 symbol=symbol, reject_reasons=result.get("reject_reasons"))
         if not result.get("reject_reasons"):
             _scan_metrics["execution_attempts_total"] = _scan_metrics.get("execution_attempts_total", 0) + 1
             _scan_metrics["last_candidate"] = {
@@ -575,17 +585,32 @@ async def _run_fresh_analysis(symbol: str, analysis_cycle_id: str = "") -> dict[
                 "analysis_cycle_id": analysis_cycle_id,
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
+            log_info("AUTO_TRADE_DIAG: calling _try_execute_trade", symbol=symbol)
             exec_result = await _try_execute_trade(symbol, result, ai_snap, regime_snap,
                                                    analysis_cycle_id=analysis_cycle_id)
             if exec_result:
                 result["execution"] = exec_result
                 _scan_metrics["last_execution_result"] = exec_result
                 _scan_metrics["last_block_reason"] = None
+                log_info("AUTO_TRADE_DIAG: execution succeeded", symbol=symbol, exec_status=exec_result.get("status"))
             else:
                 _scan_metrics["execution_failed_total"] = _scan_metrics.get("execution_failed_total", 0) + 1
                 # _try_execute_trade already set last_block_reason — don't overwrite
                 if not _scan_metrics.get("last_block_reason"):
                     _scan_metrics["last_block_reason"] = "Execution returned None — check logs"
+                log_warn("AUTO_TRADE_DIAG: execution returned None",
+                         symbol=symbol,
+                         last_block_code=_scan_metrics.get("last_block_code"),
+                         last_block_reason=_scan_metrics.get("last_block_reason"))
+        else:
+            log_warn("AUTO_TRADE_DIAG: trade rejected by reject_reasons",
+                     symbol=symbol, reasons=result.get("reject_reasons"))
+    else:
+        log_info("AUTO_TRADE_DIAG: opportunity does NOT qualify for execution",
+                 symbol=symbol,
+                 has_result=bool(result),
+                 score=result.get("opportunity_score", 0) if result else 0,
+                 direction=result.get("direction", "NONE") if result else "NONE")
 
     _mark_analyzed(symbol)
     return result
@@ -1071,6 +1096,16 @@ async def _try_execute_trade(
         _scan_metrics["last_execution_trace"] = _trace
         return None
 
+    log_info("AUTO_TRADE_DIAG: _try_execute_trade entered",
+             symbol=symbol,
+             direction=result.get("direction"),
+             score=result.get("opportunity_score"),
+             auto_execute=get_ats().auto_execute_paper_trades,
+             runtime_mode=_get_runtime_mode(),
+             has_paper_broker=_paper_broker is not None,
+             has_gateway=_exec_gateway is not None,
+             has_planner=_planner is not None)
+
     _stage("TRY_EXECUTE_ENTERED", symbol=symbol, direction=result.get("direction",""), score=result.get("opportunity_score",0))
 
     # ── EventBus safety gate ──
@@ -1078,6 +1113,7 @@ async def _try_execute_trade(
         if _event_bus:
             safe, reason = _event_bus.can_execute_safely()
             if not safe:
+                log_warn("AUTO_TRADE_DIAG: EventBus unsafe", reason=reason)
                 _scan_metrics["risk_blocked_total"] = _scan_metrics.get("risk_blocked_total", 0) + 1
                 return _fail("EXEC_BLOCK_EVENTBUS_UNSAFE", reason)
     except Exception:
@@ -1100,6 +1136,7 @@ async def _try_execute_trade(
         return _fail("EXEC_BLOCK_REJECT_REASONS", f"Rejected: {result['reject_reasons'][0]}")
 
     runtime_mode = _get_runtime_mode()
+    log_info("AUTO_TRADE_DIAG: runtime mode check", mode=runtime_mode)
     if runtime_mode == "observe":
         return _fail("EXEC_BLOCK_RUNTIME_MODE_OBSERVE",
                      "Runtime mode is OBSERVE — does not allow trade execution")
@@ -1110,6 +1147,7 @@ async def _try_execute_trade(
     # ── Auto Execute Paper Trades gate ──
     try:
         ats_settings = get_ats()
+        log_info("AUTO_TRADE_DIAG: auto_execute check", value=ats_settings.auto_execute_paper_trades)
         if not ats_settings.auto_execute_paper_trades:
             return _fail("EXEC_BLOCK_AUTO_EXECUTE_DISABLED",
                          "Auto Execute Paper Trades is disabled in settings",
@@ -1119,6 +1157,7 @@ async def _try_execute_trade(
     _stage("AUTO_EXECUTE_PASSED")
 
     session = check_session()
+    log_info("AUTO_TRADE_DIAG: session check", can_trade=session.can_trade, code=session.code, reason=session.reason)
     if not session.can_trade:
         return _fail("EXEC_BLOCK_SESSION", f"Session blocked: {session.code}:{session.reason}")
     _stage("SESSION_GATE_PASSED")
@@ -1197,7 +1236,9 @@ async def _try_execute_trade(
     option_plan = None
     try:
         from execution.execution_config import is_option_buying
-        if is_option_buying():
+        option_buying_active = is_option_buying()
+        log_info("AUTO_TRADE_DIAG: is_option_buying", active=option_buying_active)
+        if option_buying_active:
             from execution.options.planner import OptionExecutionPlanner
 
             # Get paper capital from broker for risk calculations
@@ -1207,8 +1248,13 @@ async def _try_execute_trade(
                 if _paper_broker:
                     acct = _paper_broker.get_account()
                     paper_capital = acct.available_cash or acct.initial_capital or 100000.0
+                    log_info("AUTO_TRADE_DIAG: paper capital", available_cash=acct.available_cash, initial_capital=acct.initial_capital)
             except Exception:
                 pass
+
+            log_info("AUTO_TRADE_DIAG: calling OptionExecutionPlanner.execute",
+                     symbol=symbol, market_price=market_price, capital=paper_capital,
+                     premium_source=ats_settings.premium_source)
 
             option_plan = await OptionExecutionPlanner.execute(
                 symbol=symbol,
@@ -1224,6 +1270,9 @@ async def _try_execute_trade(
                 _scan_metrics["option_plans_created_total"] = _scan_metrics.get("option_plans_created_total", 0) + 1
                 if option_plan.premium > 0:
                     _scan_metrics["premium_ready_total"] = _scan_metrics.get("premium_ready_total", 0) + 1
+                log_info("AUTO_TRADE_DIAG: option plan created",
+                         premium=option_plan.premium, source=option_plan.premium_source,
+                         lots=option_plan.lots, lot_size=option_plan.lot_size)
                 _stage("OPTION_PLAN_CREATED",
                        option=f"{option_plan.strike:.0f}{option_plan.option_type}",
                        premium=option_plan.premium,
@@ -1232,11 +1281,16 @@ async def _try_execute_trade(
                        lot_size=option_plan.lot_size,
                        cost=option_plan.total_cost)
             else:
+                log_warn("AUTO_TRADE_DIAG: OptionExecutionPlanner returned None — premium fetch likely failed",
+                         symbol=symbol, premium_source=ats_settings.premium_source)
                 _stage("OPTION_PLAN_FAILED", reason="planner returned None")
-    except ImportError:
+        else:
+            log_info("AUTO_TRADE_DIAG: option_buying not active")
+    except ImportError as e:
+        log_warn("AUTO_TRADE_DIAG: import error in option plan", error=str(e))
         pass
     except Exception as e:
-        log_warn("AutoTrade: option execution plan failed", error=str(e))
+        log_warn("AUTO_TRADE_DIAG: option execution plan failed", error=str(e))
 
     # ── Build TradePlan (option-aware or spot) ──
     planner = _planner
