@@ -109,11 +109,27 @@ class EventBus:
 
     # ── Lifecycle ──
 
-    async def start(self):
-        """Start the background dispatcher. Called once on app startup."""
+    async def start(self, reset_counters: bool = True):
+        """Start the background dispatcher. Called once on app startup.
+
+        When reset_counters=True (default), all internal counters including
+        critical_events_dropped are reset — this should be used on engine restart
+        to clear historical drops from a previous session.
+        """
         if self._running:
             log_warn("EventBus already running")
             return
+        if reset_counters:
+            self._total_published = 0
+            self._total_dispatched = 0
+            self._total_errors = 0
+            self._total_dropped = 0
+            self._critical_dropped = 0
+            self._drop_counts = {}
+            self._total_coalesced = 0
+            self._total_processing_time_ns = 0
+            self._health_status = "HEALTHY"
+            self._coalesce_cache.clear()
         self._running = True
         self._dispatcher_task = asyncio.create_task(
             self._dispatch_loop(), name="eventbus-dispatcher"
@@ -332,6 +348,19 @@ class EventBus:
 
     def get_health_status(self) -> str:
         return self._health_status
+
+    def reset_counters(self):
+        """Reset all counters including critical drops.
+        Called on engine start to clear historical drops from warmup periods."""
+        self._total_published = 0
+        self._total_dispatched = 0
+        self._total_errors = 0
+        self._total_dropped = 0
+        self._critical_dropped = 0
+        self._drop_counts = {}
+        self._total_coalesced = 0
+        self._total_processing_time_ns = 0
+        self._health_status = "HEALTHY"
 
     def get_stats(self) -> dict[str, Any]:
         """Return internal bus statistics."""

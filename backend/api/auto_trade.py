@@ -2737,6 +2737,14 @@ async def auto_trade_start():
 
         # Reset funnel counters for new session
         _engine_session_id = uuid.uuid4().hex[:12]
+
+        # Reset EventBus counter so historical drops from warmup don't block execution
+        try:
+            if _event_bus:
+                _event_bus.reset_counters()
+                log_info("AutoTrade: EventBus counters reset for new session")
+        except Exception:
+            pass
         _counter_reset_at = datetime.now(timezone.utc).isoformat()
         for _k in _scan_metrics:
             if isinstance(_scan_metrics[_k], (int, float)):
