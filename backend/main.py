@@ -327,7 +327,44 @@ async def lifespan(app: FastAPI):
     from trading.event_service import LifecycleEventService
 
     paper_broker = init_paper_broker(trade_lifecycle, pnl_engine, LifecycleEventService(event_bus))
+
+    # Wire Phase 2D services: DB persistence and premium tick router
+    import database.paper_trading_schema as _pts
+    import services.paper_trading_db as _ptdb
+    _pts.init_paper_trading_tables()
+    paper_broker.set_db_service(_ptdb)
+
+    from execution.options.premium_monitor import get_premium_tick_router, PremiumTickRouter
+    premium_router = get_premium_tick_router()
+    premium_router.set_premium_callback(paper_broker.on_premium_tick)
+    paper_broker.set_premium_router(premium_router)
+
+    # Restore open positions from persisted state
+    try:
+        open_positions = get_open_positions()
+        if open_positions:
+            recovery_diag = paper_broker.restore_positions(open_positions)
+            paper_broker._recovery_diagnostics = recovery_diag
+            log_info("PaperBroker: restart recovery completed", **recovery_diag)
+        else:
+            paper_broker._recovery_diagnostics = {
+                "positions_found": 0, "positions_restored": 0,
+                "positions_failed": 0, "tokens_resubscribed": [],
+                "last_recovery_at": datetime.now(timezone.utc).isoformat(),
+                "recovery_errors": [],
+            }
+    except Exception as e:
+        log_error("PaperBroker: restart recovery failed", error=str(e))
+        paper_broker._recovery_diagnostics = {
+            "recovery_error": str(e),
+            "last_recovery_at": datetime.now(timezone.utc).isoformat(),
+        }
+
     paper_broker.start()
+
+    # Register premium tick handler for KiteTicker ticks
+    # Option premium ticks are routed by instrument_token, not symbol
+    # This is wired in the tick handler in main.py's on_tick
 
     # Wire PaperBroker into ExecutionGateway — single authoritative execution path
     exec_gateway.set_paper_broker(paper_broker)

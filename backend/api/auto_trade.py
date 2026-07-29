@@ -1987,11 +1987,50 @@ async def auto_trade_workspace():
     except Exception:
         result["paper_account"] = {}
 
+    # ── Phase 2D: Premium freshness summary ──
+    try:
+        if _paper_broker:
+            positions = _paper_broker.get_positions()
+            stale_count = sum(1 for p in positions if p.check_stale() in ("STALE", "DISCONNECTED"))
+            live_count = sum(1 for p in positions if p.check_stale() == "LIVE")
+            waiting_count = sum(1 for p in positions if p.check_stale() == "WAITING_FOR_FIRST_TICK")
+            result["premium_freshness"] = {
+                "total_positions": len(positions),
+                "live_count": live_count,
+                "stale_count": stale_count,
+                "waiting_count": waiting_count,
+            }
+        else:
+            result["premium_freshness"] = {"total_positions": 0, "live_count": 0, "stale_count": 0, "waiting_count": 0}
+    except Exception:
+        result["premium_freshness"] = {"total_positions": 0, "live_count": 0, "stale_count": 0, "waiting_count": 0}
+
+    # ── Phase 2D: Premium data status per position ──
+    try:
+        if _paper_broker and result.get("open_positions"):
+            for pos_dict in result["open_positions"]:
+                pos_obj = _paper_broker.get_position_by_id(pos_dict.get("trade_id", ""))
+                if pos_obj:
+                    pos_dict["premium_data_status"] = pos_obj.check_stale()
+                    pos_dict["premium_tick_age_ms"] = pos_obj.premium_tick_age_ms
+                    pos_dict["last_premium_tick_at"] = pos_obj.last_premium_tick_at
+    except Exception:
+        pass
+
+    # ── Phase 2D: Recovery diagnostics ──
+    try:
+        if hasattr(_paper_broker, "_recovery_diagnostics") and _paper_broker._recovery_diagnostics:
+            result["recovery_info"] = _paper_broker._recovery_diagnostics
+        else:
+            result["recovery_info"] = {}
+    except Exception:
+        result["recovery_info"] = {}
+
     # ── Data Source Provenance ──
     result["data_sources"] = {
         "underlying_live_source": "ZERODHA_KITE_WEBSOCKET",
         "historical_source": "ZERODHA_KITE",
-        "premium_source": get_ats().premium_source if hasattr(get_ats(), "premium_source") else "ZERODHA",
+        "premium_source": get_ats().premium_source if hasattr(get_ats(), "premium_source") else "ZERODHA_KITE_WEBSOCKET",
         "yahoo_feeds": {
             "chart_endpoint": True,
             "historical_analysis": False,
@@ -1999,6 +2038,12 @@ async def auto_trade_workspace():
             "executable_decisions": False,
         },
     }
+    # Premium source guarantee
+    result["data_sources"]["premium_source_guarantee"] = (
+        "controlled_test" if _is_dev_mode() and result.get("open_positions") and
+        any(p.get("premium_source") == "CONTROLLED_TEST_FIXTURE" for p in (result.get("open_positions") or []))
+        else "ZERODHA_KITE_QUOTE"
+    )
 
     return result
 
@@ -2008,8 +2053,8 @@ async def auto_trade_close_paper_position(trade_id: str):
     """Close a paper position manually.
 
     Only PAPER positions can be closed through this endpoint.
-    Fetches current premium (where available), calculates realized P&L,
-    moves position to history, and returns the closed position.
+    Fetches current premium, calculates realized P&L,
+    moves position to history, returns complete closed trade result.
     """
     if not _paper_broker:
         raise HTTPException(status_code=503, detail="PaperBroker not initialized")
@@ -2018,17 +2063,29 @@ async def auto_trade_close_paper_position(trade_id: str):
     if not pos:
         raise HTTPException(status_code=404, detail="Paper position not found")
 
-    current_price = pos.current_price
-    success = _paper_broker.close_position(trade_id, reason="manual_exit")
+    # Check if already closed
+    if pos.exit_reason is not None:
+        raise HTTPException(status_code=400, detail=f"Position already closed: {pos.exit_reason}")
+
+    # Check premium freshness — reject stale unless explicitly forced
+    data_status = pos.check_stale()
+    if data_status in ("STALE", "DISCONNECTED"):
+        # Allow close at last known premium but flag it
+        log_warn("Manual close with stale premium", trade_id=trade_id, status=data_status)
+
+    exit_price = pos.premium_current or pos.current_price
+    success = _paper_broker.close_position(trade_id, reason="MANUAL_EXIT")
     if not success:
-        raise HTTPException(status_code=500, detail="Failed to close position")
+        raise HTTPException(status_code=500, detail="Failed to close position (may already be closed)")
 
     return {
         "success": True,
         "trade_id": trade_id,
-        "exit_price": current_price,
+        "exit_price": exit_price,
+        "exit_reason": "MANUAL_EXIT",
+        "premium_data_status": data_status,
         "realized_pnl": round(pos.realized_pnl, 2),
-        "message": "Position closed",
+        "message": "Position closed manually",
     }
 
 
@@ -2041,6 +2098,99 @@ async def auto_trade_get_paper_positions():
     return {
         "positions": [p.to_dict(include_diagnostics=True) for p in positions],
         "total": len(positions),
+    }
+
+
+@router.get("/api/auto-trade/trade-history")
+async def auto_trade_get_trade_history(limit: int = 100, offset: int = 0):
+    """Get completed paper trade history with pagination."""
+    if not _paper_broker:
+        return {"trades": [], "total": 0}
+    trades = _paper_broker.get_trades()
+    total = len(trades)
+    sliced = trades[-limit - offset:] if offset == 0 else trades[-(limit + offset):-offset or None]
+    if limit and offset == 0:
+        sliced = sliced[-limit:]
+    return {"trades": sliced, "total": total}
+
+
+@router.get("/api/auto-trade/paper-positions/{trade_id}/events")
+async def auto_trade_get_position_events(trade_id: str):
+    """Get lifecycle events for a specific position."""
+    if not _paper_broker:
+        raise HTTPException(status_code=503, detail="PaperBroker not initialized")
+    pos = _paper_broker.get_position_by_id(trade_id)
+    if not pos:
+        # Check history
+        all_trades = _paper_broker.get_trades()
+        found = any(t.get("trade_id") == trade_id for t in all_trades)
+        if not found:
+            raise HTTPException(status_code=404, detail="Position not found")
+    events = _paper_broker.get_trade_position_events(trade_id)
+    return {"trade_id": trade_id, "events": events}
+
+
+@router.post("/api/auto-trade/market-close-exit")
+async def auto_trade_market_close_exit():
+    """Force-close all open paper positions (market close / emergency)."""
+    if not _paper_broker:
+        raise HTTPException(status_code=503, detail="PaperBroker not initialized")
+    _paper_broker.force_market_close_exit()
+    return {
+        "success": True,
+        "message": "Market close exit completed",
+        "open_positions_remaining": len(_paper_broker.get_positions()),
+    }
+
+
+@router.get("/api/auto-trade/recovery-status")
+async def auto_trade_recovery_status():
+    """Get restart recovery diagnostics."""
+    if not _paper_broker:
+        return {"recovery_performed": False, "diagnostics": {}}
+    diag = getattr(_paper_broker, "_recovery_diagnostics", {})
+    return {
+        "recovery_performed": bool(diag),
+        "diagnostics": diag,
+    }
+
+
+@router.post("/api/auto-trade/inject-premium-tick", include_in_schema=False)
+async def auto_trade_inject_premium_tick(payload: dict):
+    """DEV ONLY: Inject a controlled premium tick for testing SL/target/P&L."""
+    if not _is_dev_mode():
+        raise HTTPException(status_code=403, detail="Only available in development/test mode")
+    if not _paper_broker:
+        raise HTTPException(status_code=503, detail="PaperBroker not initialized")
+
+    trade_id = (payload or {}).get("trade_id", "")
+    premium = float((payload or {}).get("premium", 0))
+    if not trade_id or premium <= 0:
+        raise HTTPException(status_code=400, detail="trade_id and premium > 0 required")
+
+    pos = _paper_broker.get_position_by_id(trade_id)
+    if not pos:
+        raise HTTPException(status_code=404, detail="Position not found")
+
+    from datetime import datetime, timezone
+    ts = datetime.now(timezone.utc).isoformat()
+    result = pos.update_premium(premium, ts)
+
+    if result.get("sl_hit"):
+        _paper_broker._close_position(trade_id, premium, "STOP_LOSS_HIT")
+    elif result.get("target_hit"):
+        _paper_broker._close_position(trade_id, premium, "TARGET_HIT")
+
+    return {
+        "success": True,
+        "trade_id": trade_id,
+        "premium": premium,
+        "unrealized_pnl": round(pos.unrealized_pnl, 2),
+        "pnl_percent": round(pos.pnl_percent, 2),
+        "sl_hit": result.get("sl_hit", False),
+        "target_hit": result.get("target_hit", False),
+        "position_closed": pos.exit_reason is not None,
+        "exit_reason": pos.exit_reason,
     }
 
 
@@ -2339,6 +2489,8 @@ async def auto_trade_controlled_one_lot_test():
             execution_symbol=execution_symbol,
             exchange=exchange,
             instrument_token=instrument_token,
+            premium_instrument_token=instrument_token,
+            source_provenance="controlled_test_fixture",
             trade_grade="A",
             ai_confidence=85.0,
             opportunity_score=85.0,

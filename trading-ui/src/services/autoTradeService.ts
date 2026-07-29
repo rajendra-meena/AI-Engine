@@ -151,6 +151,11 @@ export interface PaperPosition {
   lots: number | null
   risk_reward: number | null
   premium_source: string
+  // Phase 2D premium monitoring
+  last_premium_tick_at: string
+  premium_tick_age_ms: number
+  premium_data_status: string
+  premium_instrument_token: number
   // Diagnostics
   ai_confidence: number
   opportunity_score: number
@@ -209,6 +214,14 @@ export interface WorkspaceResponse {
   trade_history: any[]
   paper_account: PaperAccount
   data_sources: any
+  // Phase 2D: premium freshness
+  premium_freshness?: {
+    total_positions: number
+    live_count: number
+    stale_count: number
+    waiting_count: number
+  }
+  recovery_info?: any
   [key: string]: any
 }
 
@@ -361,6 +374,40 @@ class AutoTradeService {
       const err = await res.json().catch(() => ({ detail: res.statusText }))
       throw new Error(err.detail || "Controlled test failed")
     }
+    return res.json()
+  }
+
+  async getTradeHistory(limit = 100, offset = 0): Promise<{ trades: any[]; total: number }> {
+    const res = await fetch(`${this.base}/api/auto-trade/trade-history?limit=${limit}&offset=${offset}`)
+    if (!res.ok) throw new Error("Failed to fetch trade history")
+    return res.json()
+  }
+
+  async getPositionEvents(tradeId: string): Promise<{ trade_id: string; events: any[] }> {
+    const res = await fetch(`${this.base}/api/auto-trade/paper-positions/${tradeId}/events`)
+    if (!res.ok) throw new Error("Failed to fetch position events")
+    return res.json()
+  }
+
+  async marketCloseExit(): Promise<any> {
+    const res = await fetch(`${this.base}/api/auto-trade/market-close-exit`, { method: "POST" })
+    if (!res.ok) throw new Error("Failed to force market close exit")
+    return res.json()
+  }
+
+  async getRecoveryStatus(): Promise<any> {
+    const res = await fetch(`${this.base}/api/auto-trade/recovery-status`)
+    if (!res.ok) throw new Error("Failed to fetch recovery status")
+    return res.json()
+  }
+
+  async injectPremiumTick(tradeId: string, premium: number): Promise<any> {
+    const res = await fetch(`${this.base}/api/auto-trade/inject-premium-tick`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ trade_id: tradeId, premium }),
+    })
+    if (!res.ok) throw new Error("Failed to inject premium tick")
     return res.json()
   }
 
