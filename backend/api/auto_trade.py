@@ -2011,11 +2011,34 @@ async def auto_trade_diagnostics():
     except Exception as e:
         blocked_reasons.append(f"readiness_check_error={e}")
 
+    # ── Option data health
+    option_data_health: dict[str, Any] = {
+        "instrument_master_ready": False,
+        "instrument_count": 0,
+        "supported_underlyings": {},
+    }
+    try:
+        if _zerodha_engine and hasattr(_zerodha_engine, '_instrument_manager'):
+            im = _zerodha_engine._instrument_manager
+            if im:
+                option_data_health["instrument_master_ready"] = im.is_loaded
+                option_data_health["instrument_count"] = len(getattr(im, '_instruments', []) or [])
+                option_data_health["instrument_master_loaded_at"] = str(getattr(im, '_last_download', ""))
+                for underlying_name in ["NIFTY", "BANKNIFTY", "SENSEX"]:
+                    count = sum(1 for inst in getattr(im, '_instruments', []) or []
+                                if inst.get("tradingsymbol", "").upper().startswith(underlying_name)
+                                and inst.get("segment") in ("NFO", "BFO")
+                                and inst.get("instrument_type") in ("OPTIDX", "OPTSTK"))
+                    option_data_health["supported_underlyings"][underlying_name] = count
+    except Exception:
+        pass
+
     return {
         "timestamp": now_ts,
         "analysis_enabled": _analysis_enabled,
         "engine_running": _engine_running,
         "engine_state": _engine_state,
+        "option_data": option_data_health,
         "lifecycle_task": lifecycle_health,
         "health_watchdog": watchdog_health,
         "pipeline": pipeline_info,

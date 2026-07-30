@@ -152,7 +152,7 @@ class InstrumentManager:
                 self._by_symbol[symbol].append(inst)
 
     def _save_cache(self):
-        """Save instruments to local cache file."""
+        """Save instruments to local cache file atomically with validation."""
         try:
             os.makedirs(os.path.dirname(INSTRUMENT_CACHE_FILE), exist_ok=True)
             data = {
@@ -160,11 +160,20 @@ class InstrumentManager:
                 "count": len(self._instruments),
                 "instruments": self._instruments,
             }
-            with open(INSTRUMENT_CACHE_FILE, "w") as f:
+            # Write to temp, validate, then atomically rename
+            tmp_path = INSTRUMENT_CACHE_FILE + ".tmp"
+            with open(tmp_path, "w") as f:
                 json.dump(data, f)
-            log_info("InstrumentManager: cache saved", path=INSTRUMENT_CACHE_FILE)
+            with open(tmp_path, "r") as f:
+                json.load(f)  # validate
+            os.replace(tmp_path, INSTRUMENT_CACHE_FILE)
+            log_info("InstrumentManager: cache saved", path=INSTRUMENT_CACHE_FILE, count=len(self._instruments))
         except Exception as e:
             log_warn("InstrumentManager: cache save failed", error=str(e))
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
 
     # ── Lookups ──
 
