@@ -515,7 +515,7 @@ async def _run_fresh_analysis(symbol: str, analysis_cycle_id: str = "") -> dict[
         8. Run risk validation
     """
     if not _is_analysis_needed(symbol):
-        log_warn("AUTO_TRADE_DIAG: _is_analysis_needed returned False", symbol=symbol)
+        # DEBUG only — this is normal during cooldown, not a warning
         return None
 
     # 1. Verify data freshness for this symbol
@@ -1284,6 +1284,11 @@ async def _try_execute_trade(
                 log_warn("AUTO_TRADE_DIAG: OptionExecutionPlanner returned None — premium fetch likely failed",
                          symbol=symbol, premium_source=ats_settings.premium_source)
                 _stage("OPTION_PLAN_FAILED", reason="planner returned None")
+                # Option plan failure is TERMINAL in option_buying mode.
+                # Do NOT fall through to spot TradePlanner or legacy RiskEngine.
+                return _fail("ZERODHA_OPTION_QUOTE_UNAVAILABLE",
+                             "Option plan creation failed — Zerodha quote unavailable. "
+                             "Check Zerodha connection and instrument master.")
         else:
             log_info("AUTO_TRADE_DIAG: option_buying not active")
     except ImportError as e:

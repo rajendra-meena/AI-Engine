@@ -81,6 +81,8 @@ class OptionExecutionPlanner:
                 expiry=expiry,
                 lot_size=lot_size,
                 source=effective_source,
+                trading_symbol=selection.get("trading_symbol", ""),
+                instrument_token=selection.get("instrument_token", 0),
             )
             premium = premium_data.get("premium", 0.0)
             if premium <= 0:
